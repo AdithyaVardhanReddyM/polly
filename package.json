@@ -1,0 +1,23 @@
+{
+  "name": "polly-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Polly — a workspace of AI agents, each with its own computer",
+  "license": "MIT",
+  "scripts": {
+    "setup": "npm install && npm --prefix apps/desktop install && npm run setup:server",
+    "setup:server": "cd server && uv sync",
+    "dev": "concurrently -n server,desktop -c yellow,magenta \"npm run dev:server\" \"npm run dev:desktop\"",
+    "dev:server": "cd server && uv run polly-server",
+    "dev:desktop": "npm --prefix apps/desktop run dev",
+    "dev:web": "npm --prefix apps/desktop run dev:web",
+    "build:desktop": "npm --prefix apps/desktop run build",
+    "typecheck": "npm --prefix apps/desktop run typecheck",
+    "test": "cd server && uv run pytest -q",
+    "lint": "cd server && uv run ruff check .",
+    "check": "cd server && uv run polly-check"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
