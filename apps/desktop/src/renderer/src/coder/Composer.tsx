@@ -1,6 +1,7 @@
 import { ArrowUp, Check, ChevronDown, Hand, Map as MapIcon, ShieldCheck, Square, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ModelOption, PermissionMode } from '../../../shared/contracts'
+import { SendArt } from '../components/StageArt'
 import { useCoder } from '../store/coder'
 import { describeModel } from '../store/models'
 import { ModelLogo, NebiusLogo } from './icons'
@@ -128,6 +129,7 @@ export function Composer({
               disabled={disabled || !draft.trim()}
               onClick={submit}
             >
+              <SendArt />
               <ArrowUp />
             </button>
           )}

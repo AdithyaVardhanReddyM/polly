@@ -2,6 +2,7 @@ import { ArrowUp, Paperclip } from 'lucide-react'
 import { useState } from 'react'
 import type { AgentSummary } from '../../../shared/contracts'
 import { AgentAvatar } from '../components/AgentAvatar'
+import { SendArt } from '../components/StageArt'
 
 const STARTERS = [
   'Fix the failing tests in my repo',
@@ -98,6 +99,7 @@ export function Home({ agents, runnable, onBrowse, onCode, onStart }: Props): Re
             disabled={!draft.trim() || !canRun}
             title={canRun ? 'Send (Enter)' : `${picked?.name ?? 'This agent'} is not available yet`}
           >
+            <SendArt />
             <ArrowUp />
           </button>
         </div>

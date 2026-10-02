@@ -4,6 +4,7 @@ import '@fontsource/instrument-serif/400-italic.css'
 import App from './App'
 import './styles.css'
 import './coder.css'
+import './stage.css'
 import { initTheme } from './theme'
 
 initTheme()

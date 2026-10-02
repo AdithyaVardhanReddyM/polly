@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import type { ServerState } from '../App'
 import mark from '../assets/polly-mark.svg'
+import { SidebarStage, useStageArt } from './StageArt'
 
 export const SECTIONS = [
   'Home',
@@ -88,6 +89,7 @@ export function Sidebar({
   collapsed,
   onToggle
 }: Props): React.JSX.Element {
+  const [art] = useStageArt()
   const item = (s: Section): React.JSX.Element => (
     <button
       key={s}
@@ -116,7 +118,10 @@ export function Sidebar({
   )
 
   return (
-    <aside className={collapsed ? 'sidebar is-collapsed' : 'sidebar'}>
+    <aside
+      className={`sidebar${collapsed ? ' is-collapsed' : ''}${art !== 'off' ? ' has-stage' : ''}`}
+    >
+      {art !== 'off' && <SidebarStage art={art} />}
       <div className="sidebar-top">{toggle}</div>
       <div className="brand">
         <img className="brand-mark" src={mark} alt="" />

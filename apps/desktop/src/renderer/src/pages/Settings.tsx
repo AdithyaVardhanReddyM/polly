@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react'
 import type { AppInfo } from '../../../shared/contracts'
 import type { ServerState } from '../App'
 import { PageHead } from '../components/PageHead'
+import { type StageArt, useStageArt } from '../components/StageArt'
 import { type ThemePref, useTheme } from '../theme'
+
+const STAGES: [StageArt, string][] = [
+  ['pixel', 'Pixel'],
+  ['blueprint', 'Blueprint'],
+  ['off', 'Off']
+]
 
 interface Props {
   server: ServerState
@@ -12,6 +19,7 @@ interface Props {
 export function Settings({ server, onRecheck }: Props): React.JSX.Element {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [theme, setTheme] = useTheme()
+  const [art, setArt] = useStageArt()
 
   useEffect(() => {
     void window.polly?.appInfo().then((r) => r.ok && setInfo(r.data))
@@ -67,6 +75,18 @@ export function Settings({ server, onRecheck }: Props): React.JSX.Element {
                     onClick={() => setTheme(t)}
                   >
                     {t[0].toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
+              </span>
+            </span>
+          </div>
+          <div className="row is-setting">
+            <span className="setting-label">Header art</span>
+            <span className="row-body">
+              <span className="segmented">
+                {STAGES.map(([a, label]) => (
+                  <button key={a} className={a === art ? 'is-active' : ''} onClick={() => setArt(a)}>
+                    {label}
                   </button>
                 ))}
               </span>

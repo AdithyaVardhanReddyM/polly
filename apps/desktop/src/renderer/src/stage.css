@@ -1,0 +1,202 @@
+/* Header art: a scene behind the sidebar brand, echoed inside the send buttons.
+ * Both scenes stay deep at the top-left so the white wordmark keeps contrast. */
+
+:root {
+  /* blueprint: violet drafting paper */
+  --stage-bp-deep: #3d2a8f;
+  --stage-bp-mid: #6c50cc;
+  --stage-bp-light: #a690f0;
+  --stage-bp-highlight: #f6f0ff;
+  --stage-bp-secondary: #c8b4ff;
+  --stage-bp-rose: #f2a7e4;
+  --stage-bp-sky: #a8d4ff;
+  --stage-bp-line: #f4eeff;
+  --stage-bp-grid: #f1ebff;
+
+  /* pixel: three violets, dithered */
+  --stage-px-deep: #2c1d74;
+  --stage-px-mid: #5a3fc4;
+  --stage-px-light: #a48df0;
+  --stage-px-spark: #f6f1ff;
+
+  /* the blueprint ends through this tint on its way to the sidebar colour:
+   * mixing deep violet straight into near-white goes grey halfway */
+  --stage-fade-tint: #e3dbfb;
+}
+
+:root[data-theme="dark"] {
+  --stage-bp-deep: #241a5e;
+  --stage-bp-mid: #47349a;
+  --stage-bp-light: #7560c8;
+  --stage-bp-highlight: #e6dcff;
+  --stage-bp-rose: #d68ad0;
+
+  --stage-px-deep: #1d1452;
+  --stage-px-mid: #43309c;
+  --stage-px-light: #7f68d6;
+
+  --stage-fade-tint: #211b38;
+}
+
+/* ---------- sidebar ---------- */
+
+.sidebar.has-stage {
+  position: relative;
+}
+
+.sidebar-stage {
+  --fade: 40px;
+  position: absolute;
+  inset: 0 0 auto;
+  height: 132px;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* the blueprint's last stretch: tint, then sidebar, on an eased curve */
+.sidebar-stage:has(> [data-stage="blueprint"])::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: var(--fade);
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--stage-fade-tint) 25%, transparent) 22%,
+    color-mix(in srgb, var(--stage-fade-tint) 60%, transparent) 45%,
+    color-mix(in srgb, var(--stage-fade-tint) 88%, transparent) 68%,
+    var(--stage-fade-tint) 82%,
+    var(--sidebar) 100%
+  );
+}
+
+.sidebar-stage svg,
+.send-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* everything in the sidebar sits over the art */
+.sidebar.has-stage > :not(.sidebar-stage) {
+  position: relative;
+}
+
+.sidebar.has-stage .brand-name {
+  color: #fff;
+  text-shadow: 0 1px 8px rgba(18, 12, 48, 0.35);
+}
+
+.sidebar.has-stage .brand-mark {
+  filter: drop-shadow(0 1px 3px rgba(18, 12, 48, 0.35));
+}
+
+.sidebar.has-stage .sidebar-toggle {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.sidebar.has-stage .sidebar-toggle:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+/* folded into the dock: a short cap of art above the toggle */
+.sidebar.is-collapsed .sidebar-stage {
+  --fade: 24px;
+  height: 54px;
+  border-radius: 13px 13px 0 0;
+}
+
+/* the pixel scene dissolves itself, pixel by pixel; it ends just above the nav */
+.sidebar .sidebar-stage:has(> [data-stage="pixel"]) {
+  height: 136px;
+}
+
+.sidebar.is-collapsed .sidebar-stage:has(> [data-stage="pixel"]) {
+  height: 54px;
+}
+
+/* the dock is too small for glowing pixels; they'd sit on the toggle */
+.sidebar.is-collapsed .px-glow {
+  display: none;
+}
+
+/* room between the brand and the nav, so the scene can finish */
+.sidebar.has-stage .brand {
+  margin-bottom: 32px;
+}
+
+.sidebar.is-collapsed.has-stage .sidebar-top {
+  border-bottom-color: transparent;
+}
+
+/* here and there a pixel lights up, glows, and fades back into the scene */
+.px-glow {
+  opacity: 0;
+  animation: px-glow 4s ease-in-out infinite;
+}
+
+@keyframes px-glow {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .px-glow {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* ---------- send buttons ---------- */
+
+.send:has(> .send-art) {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: transparent;
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 3px rgba(36, 22, 96, 0.28);
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.send-art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.send:has(> .send-art) svg:not(.send-art svg) {
+  filter: drop-shadow(0 1px 1px rgba(18, 12, 48, 0.35));
+}
+
+.send:has(> .send-art):hover:not(:disabled) {
+  background: transparent;
+  filter: brightness(1.12);
+  transform: scale(1.05);
+}
+
+.send:has(> .send-art):active:not(:disabled) {
+  transform: scale(0.97);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.send:has(> .send-art):disabled,
+.coder-composer .send:has(> .send-art):disabled {
+  background: transparent;
+  color: #fff;
+  opacity: 0.4;
+  box-shadow: none;
+}

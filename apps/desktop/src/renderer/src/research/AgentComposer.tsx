@@ -1,5 +1,6 @@
 import { ArrowUp, Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { SendArt } from '../components/StageArt'
 import type { AgentStore } from '../store/agentSession'
 
 /** Message box for project-less agents. `children` sit left of the send button. */
@@ -73,6 +74,7 @@ export function AgentComposer({
               disabled={disabled || busy || !draft.trim()}
               onClick={submit}
             >
+              <SendArt />
               <ArrowUp />
             </button>
           )}
