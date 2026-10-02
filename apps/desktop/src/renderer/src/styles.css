@@ -31,8 +31,77 @@
   --custom-ink: var(--brand-ink);
 
   --serif: 'Instrument Serif', 'Times New Roman', serif;
+  --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   --radius: 8px;
   --radius-lg: 12px;
+
+  /* surfaces and states used across the app */
+  --hover: rgba(28, 27, 34, 0.045);
+  --shadow-sm: 0 1px 2px rgba(28, 27, 34, 0.05);
+  --shadow-md: 0 1px 2px rgba(28, 27, 34, 0.04), 0 8px 24px rgba(28, 27, 34, 0.06);
+  --shadow-lg: 0 4px 12px rgba(28, 27, 34, 0.08), 0 24px 48px rgba(28, 27, 34, 0.12);
+
+  /* code, diffs, tool output */
+  --code-bg: #f6f5f9;
+  --code-ink: #2b2a33;
+  --diff-add-bg: #e7f6ec;
+  --diff-add-ink: #1a6b3d;
+  --diff-add-strong: #c9ecd5;
+  --diff-del-bg: #fdecec;
+  --diff-del-ink: #a3342a;
+  --diff-del-strong: #f8d0cd;
+  --info-bg: #eef3fb;
+  --info-ink: #2f4c9c;
+  --error-bg: #fdecec;
+  --error-ink: #a3342a;
+}
+
+:root[data-theme='dark'] {
+  --brand: #a08ce4;
+  --brand-soft: #5d4d9a;
+  --brand-tint: #26213a;
+  --brand-ink: #cdbfff;
+  --brand-hover: #b19ff0;
+
+  --bg: #111114;
+  --sidebar: #16161a;
+  --surface: #1b1b20;
+  --ink: #ececf1;
+  --muted: #a1a0ab;
+  --faint: #6f6e79;
+  --line: #2a2a31;
+  --line-strong: #393941;
+
+  --warn-bg: #33270f;
+  --warn-ink: #f0c36d;
+  --warn: #e0a83a;
+  --ok: #4cc38a;
+  --down: #e0675b;
+
+  --coding-bg: #1b2333;
+  --coding-ink: #9db8f5;
+  --research-bg: #17291f;
+  --research-ink: #85d4a8;
+  --everyday-bg: #2d2116;
+  --everyday-ink: #f0b783;
+
+  --hover: rgba(255, 255, 255, 0.05);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4), 0 24px 48px rgba(0, 0, 0, 0.5);
+
+  --code-bg: #15151a;
+  --code-ink: #dcdce4;
+  --diff-add-bg: #12261b;
+  --diff-add-ink: #7fd6a1;
+  --diff-add-strong: #1b3c29;
+  --diff-del-bg: #2d1615;
+  --diff-del-ink: #f19a90;
+  --diff-del-strong: #4a1f1c;
+  --info-bg: #1b2333;
+  --info-ink: #9db8f5;
+  --error-bg: #2d1615;
+  --error-ink: #f19a90;
 }
 
 * {
@@ -72,7 +141,7 @@ ul {
 }
 
 code {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family: var(--mono);
   font-size: 0.92em;
   background: var(--sidebar);
   padding: 1px 5px;
@@ -152,7 +221,7 @@ code {
 }
 
 .nav-item:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--hover);
   color: var(--ink);
 }
 
@@ -240,6 +309,12 @@ code {
 .content {
   overflow-y: auto;
   padding: 44px 40px 40px;
+}
+
+/* Workspaces (the Coder) own the whole column and scroll their own panes. */
+.content.is-flush {
+  overflow: hidden;
+  padding: 0;
 }
 
 .page {
@@ -363,7 +438,7 @@ code {
   border: 1px solid var(--line-strong);
   border-radius: 16px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(28, 27, 34, 0.04), 0 8px 24px rgba(28, 27, 34, 0.04);
+  box-shadow: var(--shadow-md);
 }
 
 .composer:focus-within {

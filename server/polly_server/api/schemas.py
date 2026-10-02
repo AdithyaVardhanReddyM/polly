@@ -3,9 +3,15 @@ two in step."""
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
 
 from polly_server.agents.spec import AgentSpec, Division, Runtime, Status
+from polly_server.coder.context import Mode
+from polly_server.coder.permissions import Rule
+from polly_server.projects import Project
+from polly_server.sessions import Session
 
 
 class AgentSummary(BaseModel):
@@ -57,3 +63,105 @@ class Health(BaseModel):
     model: ModelInfo
     sandbox: Provider
     search: Provider
+
+
+# ---------- models ----------
+
+
+class ModelOption(BaseModel):
+    id: str
+    label: str
+    vendor: str
+    context_window: int
+    reasoning: bool
+    is_default: bool
+    is_default_fast: bool
+
+
+class ModelList(BaseModel):
+    models: list[ModelOption]
+    default: str
+    default_fast: str
+
+
+# ---------- projects ----------
+
+
+class ProjectCreate(BaseModel):
+    path: str
+
+
+class ProjectPatch(BaseModel):
+    default_model: str | None = None
+    default_mode: Mode | None = None
+    command_allowlist: list[str] | None = None
+    command_denylist: list[str] | None = None
+
+
+class ProjectList(BaseModel):
+    projects: list[Project]
+
+
+class RuleList(BaseModel):
+    rules: list[Rule]
+
+
+class ProjectMemory(BaseModel):
+    polly_md: str | None
+    memory_md: str | None
+
+
+# ---------- sessions ----------
+
+
+class SessionCreate(BaseModel):
+    project_id: str
+    model: str | None = None
+    mode: Mode | None = None
+    title: str = ""
+
+
+class SessionPatch(BaseModel):
+    model: str | None = None
+    mode: Mode | None = None
+    title: str | None = None
+
+
+class SessionList(BaseModel):
+    sessions: list[Session]
+
+
+class MessageIn(BaseModel):
+    content: str = Field(min_length=1)
+
+
+class Decision(BaseModel):
+    type: Literal["approve", "edit", "reject"]
+    edited_action: dict[str, Any] | None = None
+    message: str | None = None
+
+
+class RememberRule(BaseModel):
+    """ "Always allow" ticked on an approval card."""
+
+    index: int
+    pattern: str
+
+
+class DecisionsIn(BaseModel):
+    decisions: list[Decision]
+    remember: list[RememberRule] = Field(default_factory=list)
+
+
+class Transcript(BaseModel):
+    session: Session
+    messages: list[dict[str, Any]]
+    todos: list[dict[str, Any]]
+    pending_approval: dict[str, Any] | None
+    run_id: str | None
+
+
+class ChangePaths(BaseModel):
+    """Files to accept or revert; empty means all of them."""
+
+    paths: list[str] = Field(default_factory=list)

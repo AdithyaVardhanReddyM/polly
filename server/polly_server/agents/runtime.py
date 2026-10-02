@@ -54,6 +54,7 @@ def build(
     *,
     tools: Mapping[str, BaseTool] | None = None,
     model: BaseChatModel | None = None,
+    subagent_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     **options: Any,
 ) -> CompiledStateGraph:
     """Build the agent described by `spec`.
@@ -61,7 +62,8 @@ def build(
     `tools` is the pool of tools available to this agent. The spec chooses
     from it by name. `options` are passed on to the underlying constructor,
     for example `checkpointer`, `store`, `backend` (deep only) or
-    `interrupt_on` (deep only).
+    `interrupt_on` (deep only). `subagent_overrides` (deep only) adds
+    per-subagent settings by name, such as `model` or `middleware`.
     """
     tools = tools or {}
     model = model or chat_model(spec.model_tier)
@@ -69,12 +71,14 @@ def build(
     if spec.runtime == "deep":
         from deepagents import create_deep_agent
 
+        overrides = subagent_overrides or {}
         subagents = [
             {
                 "name": s.name,
                 "description": s.description,
                 "system_prompt": s.system_prompt or s.description,
                 **({"tools": _pick(tools, s.tools, s.name)} if s.tools else {}),
+                **overrides.get(s.name, {}),
             }
             for s in spec.subagents
         ]

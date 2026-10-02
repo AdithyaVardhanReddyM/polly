@@ -16,7 +16,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(REPO_ROOT / ".env", override=False)
 
 NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
+# Ids are case-sensitive on Token Factory; see `model_registry.MODELS`.
 DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+DEFAULT_FAST_MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -48,6 +50,12 @@ class Settings:
             return bool(self.nebius_api_key and self.nebius_project_id)
         return False
 
+    def data_path(self, *parts: str) -> Path:
+        """A path under the data dir, created on first use."""
+        path = self.data_dir.joinpath(*parts)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
 
 def load() -> Settings:
     return Settings(
@@ -58,7 +66,7 @@ def load() -> Settings:
         nebius_base_url=_env("NEBIUS_BASE_URL", NEBIUS_BASE_URL),
         nebius_project_id=_env("NEBIUS_PROJECT_ID"),
         model=_env("POLLY_MODEL", DEFAULT_MODEL),
-        fast_model=_env("POLLY_FAST_MODEL", "nvidia/nvidia-nemotron-3-nano-30b-a3b"),
+        fast_model=_env("POLLY_FAST_MODEL", DEFAULT_FAST_MODEL),
         sandbox_provider=_env("POLLY_SANDBOX", "contree"),
         tavily_api_key=_env("TAVILY_API_KEY"),
     )

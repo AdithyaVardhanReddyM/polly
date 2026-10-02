@@ -17,6 +17,12 @@ export interface AppInfo {
 export interface PollyBridge {
   appInfo: () => Promise<Result<AppInfo>>
   serverUrl: () => Promise<string>
+  /** Native folder picker; resolves to null when the user cancels. */
+  pickFolder: () => Promise<string | null>
+  /** Show a path in Finder / Explorer. */
+  revealPath: (path: string) => Promise<void>
+  /** Keep the window chrome in step with the renderer's theme. */
+  setBackgroundColor: (hex: string) => Promise<void>
 }
 
 // ---------- agent server ----------
@@ -53,3 +59,249 @@ export interface ServerHealth {
   sandbox: { provider: string; configured: boolean }
   search: { provider: string; configured: boolean }
 }
+
+// ---------- models ----------
+
+export interface ModelOption {
+  id: string
+  label: string
+  vendor: string
+  context_window: number
+  reasoning: boolean
+  is_default: boolean
+  is_default_fast: boolean
+}
+
+export interface ModelList {
+  models: ModelOption[]
+  default: string
+  default_fast: string
+}
+
+// ---------- coder: projects and sessions ----------
+
+/**
+ * supervised: ask before every edit and command · trusted: edits go through,
+ * commands and deletes ask · autonomous: never asks · plan: read-only
+ */
+export type PermissionMode = 'supervised' | 'trusted' | 'autonomous' | 'plan'
+
+export interface Rule {
+  tool: string
+  pattern: string
+}
+
+export interface ProjectSettings {
+  default_model: string
+  default_mode: PermissionMode
+  command_allowlist: string[]
+  command_denylist: string[]
+}
+
+export interface Project {
+  id: string
+  name: string
+  path: string
+  created_at: number
+  settings: ProjectSettings
+}
+
+export interface TreeNode {
+  name: string
+  path: string
+  kind: 'file' | 'dir'
+  size?: number | null
+  children?: TreeNode[] | null
+}
+
+export interface FileContent {
+  path: string
+  content: string
+  truncated: boolean
+}
+
+export type SessionStatus = 'idle' | 'running' | 'awaiting_approval' | 'error'
+
+export interface UsageTotals {
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+}
+
+export interface Session {
+  id: string
+  project_id: string
+  title: string
+  model: string
+  mode: PermissionMode
+  created_at: number
+  updated_at: number
+  status: SessionStatus
+  usage: UsageTotals
+  context_tokens: number
+  last_error: string | null
+}
+
+export interface Todo {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
+export interface ToolCallRef {
+  id: string
+  name: string
+  args: Record<string, unknown>
+}
+
+export type WireMessage =
+  | { role: 'user'; id: string; text: string }
+  | {
+      role: 'assistant'
+      id: string
+      text: string
+      reasoning: string
+      tool_calls: ToolCallRef[]
+      usage: UsageTotals | null
+    }
+  | {
+      role: 'tool'
+      id: string
+      call_id: string
+      name: string
+      status: 'ok' | 'error' | 'blocked' | 'rejected'
+      output: string
+      truncated: boolean
+    }
+
+export interface ApprovalRequest {
+  index: number
+  name: string
+  args: Record<string, unknown>
+  description: string
+  allowed_decisions: ('approve' | 'edit' | 'reject')[]
+  kind: 'edit' | 'delete' | 'command' | 'other'
+  preview: { path?: string | null; command?: string | null }
+}
+
+export interface ApprovalRequired {
+  interrupt_id: string | null
+  requests: ApprovalRequest[]
+}
+
+export interface Transcript {
+  session: Session
+  messages: WireMessage[]
+  todos: Todo[]
+  pending_approval: ApprovalRequired | null
+  run_id: string | null
+}
+
+export type Decision =
+  | { type: 'approve' }
+  | { type: 'edit'; edited_action: { name: string; args: Record<string, unknown> } }
+  | { type: 'reject'; message?: string }
+
+export interface RememberRule {
+  index: number
+  pattern: string
+}
+
+export type ChangeKind = 'created' | 'modified' | 'deleted'
+
+export interface FileChange {
+  path: string
+  kind: ChangeKind
+  additions: number
+  deletions: number
+  /** agent: made with the file tools · shell: seen in git after a command */
+  source: 'agent' | 'shell'
+}
+
+export interface FileDiff {
+  path: string
+  kind: ChangeKind
+  before: string
+  after: string
+  binary: boolean
+}
+
+export interface ProjectMemory {
+  polly_md: string | null
+  memory_md: string | null
+}
+
+// ---------- coder: the event stream ----------
+
+interface EventBase {
+  seq: number
+  run_id: string
+}
+
+export type CoderEvent =
+  | (EventBase & {
+      type: 'run.started'
+      session_id: string
+      model: string
+      mode: PermissionMode
+    })
+  | (EventBase & {
+      type: 'message.delta'
+      message_id: string
+      agent: string
+      text?: string
+      reasoning?: string
+    })
+  | (EventBase & {
+      type: 'message.completed'
+      message_id: string
+      agent: string
+      text: string
+      reasoning: string
+      tool_calls: ToolCallRef[]
+      usage: UsageTotals | null
+    })
+  | (EventBase & {
+      type: 'tool.call'
+      agent: string
+      message_id: string
+      call_id: string
+      name: string
+      args: Record<string, unknown>
+    })
+  | (EventBase & {
+      type: 'tool.result'
+      agent: string
+      call_id: string
+      name: string
+      status: 'ok' | 'error' | 'blocked' | 'rejected'
+      output: string
+      truncated: boolean
+      duration_ms: number | null
+    })
+  | (EventBase & {
+      type: 'subagent.started'
+      task_id: string
+      name: string
+      description: string
+      call_id: string | null
+    })
+  | (EventBase & { type: 'subagent.completed'; task_id: string; name: string; summary: string })
+  | (EventBase & { type: 'approval.required' } & ApprovalRequired)
+  | (EventBase & { type: 'todos.updated'; todos: Todo[] })
+  | (EventBase & { type: 'file.changed' } & FileChange)
+  | (EventBase &
+      UsageTotals & {
+        type: 'usage'
+        run_total: UsageTotals
+        session_total: UsageTotals
+        context_tokens: number
+        context_window: number | null
+        replayed?: boolean
+      })
+  | (EventBase & { type: 'compaction'; node: string })
+  | (EventBase & {
+      type: 'run.finished'
+      status: 'completed' | 'awaiting_approval' | 'cancelled' | 'error'
+      error: string | null
+      duration_ms: number
+    })

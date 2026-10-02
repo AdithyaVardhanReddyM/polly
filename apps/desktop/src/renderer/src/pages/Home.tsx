@@ -13,9 +13,11 @@ const STARTERS = [
 interface Props {
   agents: AgentSummary[]
   onBrowse: () => void
+  /** Open the Coder workspace. */
+  onCode: () => void
 }
 
-export function Home({ agents, onBrowse }: Props): React.JSX.Element {
+export function Home({ agents, onBrowse, onCode }: Props): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const [agentId, setAgentId] = useState<string>('auto')
 
@@ -29,7 +31,7 @@ export function Home({ agents, onBrowse }: Props): React.JSX.Element {
                 key={a.id}
                 className={a.id === agentId ? 'crew-bot is-picked' : 'crew-bot'}
                 title={`${a.name} — ${a.tagline}`}
-                onClick={() => setAgentId(a.id === agentId ? 'auto' : a.id)}
+                onClick={() => (a.id === 'coder' ? onCode() : setAgentId(a.id === agentId ? 'auto' : a.id))}
               >
                 <AgentAvatar agent={a} size={40} />
               </button>
@@ -88,6 +90,10 @@ export function Home({ agents, onBrowse }: Props): React.JSX.Element {
 
       <p className="home-foot">
         {agents.length > 0 ? `${agents.length} agents in the workspace · ` : ''}
+        <button className="link" onClick={onCode}>
+          Open Coder
+        </button>
+        {' · '}
         <button className="link" onClick={onBrowse}>
           Browse agents
         </button>

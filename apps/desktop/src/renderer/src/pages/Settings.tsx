@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AppInfo } from '../../../shared/contracts'
 import type { ServerState } from '../App'
 import { PageHead } from '../components/PageHead'
+import { type ThemePref, useTheme } from '../theme'
 
 interface Props {
   server: ServerState
@@ -10,6 +11,7 @@ interface Props {
 
 export function Settings({ server, onRecheck }: Props): React.JSX.Element {
   const [info, setInfo] = useState<AppInfo | null>(null)
+  const [theme, setTheme] = useTheme()
 
   useEffect(() => {
     void window.polly?.appInfo().then((r) => r.ok && setInfo(r.data))
@@ -47,6 +49,30 @@ export function Settings({ server, onRecheck }: Props): React.JSX.Element {
           ))}
         </div>
         <p className="hint">Keys live in the repo-root <code>.env</code>; see <code>.env.example</code>.</p>
+      </section>
+
+      <section>
+        <div className="section-head">
+          <h2>Appearance</h2>
+        </div>
+        <div className="list">
+          <div className="row is-setting">
+            <span className="setting-label">Theme</span>
+            <span className="row-body">
+              <span className="segmented">
+                {(['system', 'light', 'dark'] as ThemePref[]).map((t) => (
+                  <button
+                    key={t}
+                    className={t === theme ? 'is-active' : ''}
+                    onClick={() => setTheme(t)}
+                  >
+                    {t[0].toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
+              </span>
+            </span>
+          </div>
+        </div>
       </section>
 
       {info && (

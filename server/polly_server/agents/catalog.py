@@ -1,8 +1,10 @@
-"""The built-in agents. Declared only — none are implemented yet."""
+"""The built-in agents. The Coder is being built (see `polly_server.coder`);
+the rest are declared only."""
 
 from __future__ import annotations
 
 from polly_server.agents.spec import AgentSpec, SubagentSpec
+from polly_server.coder.prompt import EXPLORER_PROMPT, SYSTEM_PROMPT, TESTER_PROMPT
 
 CATALOG: tuple[AgentSpec, ...] = (
     # ---------- coding ----------
@@ -20,15 +22,24 @@ CATALOG: tuple[AgentSpec, ...] = (
         },
         tagline="Writes, runs and tests code",
         description=(
-            "Plans a change, edits the repo in its sandbox, runs the tests and "
-            "opens a pull request when they pass."
+            "Plans a change, edits the project, runs the tests and commits "
+            "when they pass. Asks before anything you have not trusted it with."
         ),
-        tools=("sandbox", "github", "web_search"),
+        status="building",
+        system_prompt=SYSTEM_PROMPT,
+        tools=("web_search", "git_status", "git_diff", "git_branch", "git_commit"),
         subagents=(
-            SubagentSpec("explorer", "Reads a codebase and reports where things live."),
-            SubagentSpec("tester", "Writes and runs tests for a change."),
+            SubagentSpec(
+                "explorer",
+                "Reads the codebase and reports where things live and how they connect.",
+                system_prompt=EXPLORER_PROMPT,
+            ),
+            SubagentSpec(
+                "tester",
+                "Writes and runs tests for a change and reports what passed.",
+                system_prompt=TESTER_PROMPT,
+            ),
         ),
-        computer=True,
     ),
     AgentSpec(
         id="designer",

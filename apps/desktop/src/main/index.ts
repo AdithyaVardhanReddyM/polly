@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { AppInfo, Result } from '../shared/contracts'
 
 const serverUrl = process.env.POLLY_SERVER_URL ?? 'http://127.0.0.1:8787'
@@ -8,9 +8,9 @@ let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1240,
-    height: 800,
-    minWidth: 960,
+    width: 1280,
+    height: 820,
+    minWidth: 980,
     minHeight: 620,
     show: false,
     title: 'Polly',
@@ -54,6 +54,28 @@ function registerIpc(): void {
     })
   )
   ipcMain.handle('app:server-url', () => serverUrl)
+
+  ipcMain.handle('app:pick-folder', async (): Promise<string | null> => {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Open a project folder',
+      buttonLabel: 'Open',
+      properties: ['openDirectory', 'createDirectory']
+    }
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  ipcMain.handle('app:reveal-path', (_event, path: string) => {
+    if (typeof path === 'string' && path.length > 0) shell.showItemInFolder(path)
+  })
+
+  ipcMain.handle('app:set-background', (_event, hex: string) => {
+    if (typeof hex === 'string' && /^#[0-9a-f]{6}$/i.test(hex)) {
+      mainWindow?.setBackgroundColor(hex)
+    }
+  })
 }
 
 void app.whenReady().then(() => {

@@ -11,7 +11,7 @@
 
 ---
 
-> **Status:** early scaffolding for the [Nebius × NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/). The app shell and agent server run; the agents themselves are declared but not built yet.
+> **Status:** in progress for the [Nebius × NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/). The **Coder** works end to end; the other agents are declared but not built yet.
 
 <p align="center">
   <img src="docs/screenshots/home.png" alt="Polly home: pick an agent and describe a task" width="100%" />
@@ -55,7 +55,7 @@ Anyone can create an agent from the app by giving it:
 
 ### Every agent gets a computer
 
-Each agent works in its own isolated environment, never on your machine:
+Agents work in their own isolated environments rather than on your machine (the Coder is the exception for now: it works in a folder you pick, under the permission mode you choose):
 
 - a **sandbox** to run code, install packages and work on files, and
 - when the job needs it, a **virtual desktop** (Linux, later Windows) with a browser and office apps, so an agent can fill in a form, put together a presentation, or work through a web app the way you would.
@@ -65,6 +65,20 @@ Sandboxes are provisioned on Nebius ([ConTree](https://docs.tokenfactory.nebius.
 ### Memory and approvals
 
 Agents keep long-term memory per agent and per user (preferences, past decisions, project context), and short-term working files per task. Anything with side effects — sending an email, merging a PR, booking a meeting — is paused for your approval.
+
+## The Coder
+
+The first agent that works end to end. Open a project folder and Coder reads it, plans the change, edits files and runs your tests, streaming every step.
+
+- **Permission modes.** *Supervised* asks before every edit and command. *Trusted* edits freely and asks before commands and deletes. *Autonomous* never asks. *Plan* is read-only and produces a plan. Switch with the chip under the composer or `Shift+Tab`.
+- **Approvals inline.** A paused action shows its diff or command. Approve (`Y`), reject with a reason (`N`), or "Always allow" this file, folder or command prefix for the project. A project's blocked-command list applies in every mode, and a command that reaches outside the project folder always asks.
+- **Changes panel.** Every file the Coder creates, edits or deletes in a session, with a diff against how it was before. Keep or undo each one. In git repositories, changes made by shell commands show up too.
+- **Plan and subagents.** Multi-step work gets a live checklist. The *explorer* and *tester* subagents run on the faster Nemotron Nano and appear as nested cards.
+- **Memory.** `POLLY.md` in the project root is read at the start of every session (one click generates it). The Coder keeps a private per-project notebook of what it learns. Long sessions are summarised at 85% of the model's context window, and the context meter shows how full it is.
+- **Sessions.** Every conversation is checkpointed. Reopen it, resume a paused approval, or reload the window mid-run and pick the stream back up.
+- **Models.** Pick per session: Nemotron 3 Super (default), Ultra, Nano and 3.5 Lightning, GLM 5.3 and 5.3 Flash, DeepSeek V4 Pro and Kimi K2.7 Code, all on Nebius Token Factory. Reasoning streams into a collapsible "Thought process".
+
+In this version the Coder works in a folder on your machine. Cloud sessions in sandboxes come next.
 
 ## How it is built
 
@@ -112,7 +126,12 @@ apps/desktop/          Electron app
 server/
   polly_server/
     agents/            agent specs, the built-in catalog, and the runtime that builds them
-    api/               FastAPI app and wire schemas
+    coder/             the Coder: prompt, permissions, change tracking, event stream, runs
+    tools/             tools agents pick by name (web search, git)
+    api/               FastAPI app, routers and wire schemas
+    projects.py        project folders the Coder may work in
+    sessions.py        conversations, their model, mode and usage
+    model_registry.py  the Token Factory models on offer
     config.py          settings from .env
     models.py          Token Factory chat models
     check.py           `npm run check`: verify keys, list Nemotron models
@@ -164,13 +183,15 @@ npm run typecheck           # TypeScript
 ## Roadmap
 
 - [x] Project scaffolding: desktop shell, agent server, agent catalog
-- [ ] Chat with an agent: streaming runs, tool calls and subagents shown live
-- [ ] Coder agent with a ConTree sandbox and GitHub
+- [x] Chat with an agent: streaming runs, tool calls and subagents shown live
+- [x] Coder: permission modes, approvals, tracked changes, memory, sessions, model choice
+- [x] Approvals for coding actions
+- [ ] Coder cloud sessions in sandboxes, with GitHub (push and pull requests)
 - [ ] Research and Deep Research with Tavily
 - [ ] Agent builder: instructions, skills, knowledge, tools
 - [ ] Integrations: Gmail, Calendar, Slack, Notion, Linear
 - [ ] Virtual desktops for computer-use agents
-- [ ] Approvals for actions with side effects
+- [ ] Approvals for every agent's actions with side effects
 - [ ] Web app
 
 ## License

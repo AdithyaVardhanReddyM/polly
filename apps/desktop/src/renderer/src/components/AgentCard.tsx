@@ -1,4 +1,4 @@
-import { Monitor, Timer } from 'lucide-react'
+import { ArrowRight, Monitor, Timer } from 'lucide-react'
 import type { AgentSummary } from '../../../shared/contracts'
 import { AgentAvatar } from './AgentAvatar'
 
@@ -8,9 +8,15 @@ const STATUS_LABEL: Record<AgentSummary['status'], string> = {
   planned: 'Planned'
 }
 
-export function AgentCard({ agent }: { agent: AgentSummary }): React.JSX.Element {
+export function AgentCard({
+  agent,
+  onOpen
+}: {
+  agent: AgentSummary
+  onOpen?: () => void
+}): React.JSX.Element {
   return (
-    <article className="agent-card">
+    <article className={onOpen ? 'agent-card is-openable' : 'agent-card'}>
       <div className="agent-card-head">
         <AgentAvatar agent={agent} size={44} />
         <span className={`status status-${agent.status}`}>{STATUS_LABEL[agent.status]}</span>
@@ -36,6 +42,11 @@ export function AgentCard({ agent }: { agent: AgentSummary }): React.JSX.Element
         ))}
         {agent.tools.length > 4 && <span>+{agent.tools.length - 4}</span>}
       </div>
+      {onOpen && (
+        <button className="btn btn-primary agent-open" onClick={onOpen}>
+          Open {agent.name} <ArrowRight />
+        </button>
+      )}
     </article>
   )
 }

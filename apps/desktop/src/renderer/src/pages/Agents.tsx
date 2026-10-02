@@ -8,9 +8,11 @@ import { DIVISIONS } from '../divisions'
 interface Props {
   agents: AgentSummary[]
   server: ServerState
+  /** Open an agent's workspace, for agents that have one. */
+  onOpen: (id: string) => void
 }
 
-export function Agents({ agents, server }: Props): React.JSX.Element {
+export function Agents({ agents, server, onOpen }: Props): React.JSX.Element {
   return (
     <div className="page">
       <PageHead
@@ -42,7 +44,7 @@ export function Agents({ agents, server }: Props): React.JSX.Element {
             </div>
             <div className="agent-grid">
               {inDivision.map((a) => (
-                <AgentCard key={a.id} agent={a} />
+                <AgentCard key={a.id} agent={a} onOpen={a.id === 'coder' ? () => onOpen(a.id) : undefined} />
               ))}
               {d.id === 'custom' && (
                 <button className="agent-card is-new" disabled>
