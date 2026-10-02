@@ -69,6 +69,12 @@ export interface ModelOption {
   vendor: string
   context_window: number
   reasoning: boolean
+  vision: boolean
+  /** Output speed on the shared endpoint. */
+  tokens_per_second: number | null
+  /** USD per million tokens. */
+  input_price: number | null
+  output_price: number | null
   is_default: boolean
   is_default_fast: boolean
 }

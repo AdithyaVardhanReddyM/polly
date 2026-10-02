@@ -19,6 +19,10 @@ def list_models() -> ModelList:
                 vendor=m.vendor,
                 context_window=m.context_window,
                 reasoning=m.reasoning,
+                vision=m.vision,
+                tokens_per_second=m.tokens_per_second,
+                input_price=m.input_price,
+                output_price=m.output_price,
                 is_default=m.id == settings.model,
                 is_default_fast=m.id == settings.fast_model,
             )

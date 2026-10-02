@@ -75,6 +75,10 @@ class ModelOption(BaseModel):
     vendor: str
     context_window: int
     reasoning: bool
+    vision: bool
+    tokens_per_second: float | None
+    input_price: float | None
+    output_price: float | None
     is_default: bool
     is_default_fast: bool
 

@@ -1,6 +1,6 @@
 import { ArrowUp, Check, ChevronDown, Hand, Map as MapIcon, ShieldCheck, Square, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { PermissionMode } from '../../../shared/contracts'
+import type { ModelOption, PermissionMode } from '../../../shared/contracts'
 import { useCoder } from '../store/coder'
 import { describeModel } from '../store/models'
 import { ModelLogo, NebiusLogo } from './icons'
@@ -241,19 +241,27 @@ function ModelPicker(): React.JSX.Element {
   const setModel = useCoder((s) => s.setModel)
   const run = useCoder((s) => s.run)
   const [open, setOpen] = useState(false)
+  const [peek, setPeek] = useState<string | null>(null)
   const current = describeModel(model, models)
   const vendors = [...new Set(models.map((m) => m.vendor))]
+  const fastest = Math.max(0, ...models.map((m) => m.tokens_per_second ?? 0))
+  const shown = models.find((m) => m.id === peek) ?? models.find((m) => m.id === model)
+
+  const toggle = (next: boolean): void => {
+    setOpen(next)
+    setPeek(null)
+  }
 
   return (
     <Popover
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={toggle}
       trigger={
         <button
           className="chip model-chip"
           disabled={run !== 'idle'}
           title={model}
-          onClick={() => setOpen(!open)}
+          onClick={() => toggle(!open)}
         >
           <ModelLogo vendor={current.vendor} model={model} size={15} />
           <span>{model ? current.label : 'Model'}</span>
@@ -261,44 +269,120 @@ function ModelPicker(): React.JSX.Element {
         </button>
       }
     >
-      <div className="menu menu-models">
-        <div className="menu-head">
-          <NebiusLogo /> Served by Nebius Token Factory
-        </div>
-        {vendors.map((v) => (
-          <div key={v} className="menu-group">
-            <div className="menu-label">{v}</div>
-            {models
-              .filter((m) => m.vendor === v)
-              .map((m) => (
-                <button
-                  key={m.id}
-                  className={m.id === model ? 'menu-item is-active' : 'menu-item'}
-                  onClick={() => {
-                    setOpen(false)
-                    void setModel(m.id)
-                  }}
-                >
-                  <span className="menu-logo">
-                    <ModelLogo vendor={m.vendor} model={m.id} size={18} />
-                  </span>
-                  <span className="menu-text">
-                    <b>
-                      {m.label}
-                      {m.is_default && <em className="badge">Default</em>}
-                    </b>
-                    <span>
-                      {formatTokens(m.context_window)} context
-                      {m.reasoning ? ' · Reasoning' : ''}
-                    </span>
-                  </span>
-                  {m.id === model && <Check className="menu-check" />}
-                </button>
-              ))}
+      <div className="model-picker">
+        <div className="menu menu-models" onMouseLeave={() => setPeek(null)}>
+          <div className="menu-head">
+            <NebiusLogo /> Served by Nebius Token Factory
           </div>
-        ))}
+          {vendors.map((v) => (
+            <div key={v} className="menu-group">
+              <div className="menu-label">{v}</div>
+              {models
+                .filter((m) => m.vendor === v)
+                .map((m) => (
+                  <button
+                    key={m.id}
+                    className={m.id === model ? 'menu-item is-active' : 'menu-item'}
+                    onMouseEnter={() => setPeek(m.id)}
+                    onFocus={() => setPeek(m.id)}
+                    onClick={() => {
+                      toggle(false)
+                      void setModel(m.id)
+                    }}
+                  >
+                    <ModelLogo vendor={m.vendor} model={m.id} size={26} />
+                    <span className="menu-text">
+                      <b>
+                        {m.label}
+                        {m.is_default && <em className="badge">Default</em>}
+                      </b>
+                      <span>
+                        {m.tokens_per_second ? `${Math.round(m.tokens_per_second)} tok/s · ` : ''}
+                        {formatTokens(m.context_window)} context
+                      </span>
+                    </span>
+                    {m.id === model && <Check className="menu-check" />}
+                  </button>
+                ))}
+            </div>
+          ))}
+        </div>
+        {shown && <ModelCard model={shown} fastest={fastest} />}
       </div>
     </Popover>
+  )
+}
+
+function formatPrice(usd: number | null): string {
+  if (usd === null) return '—'
+  return `$${usd.toFixed(2)}`
+}
+
+/** The facts that matter when choosing a model, beside the picker list. */
+function ModelCard({ model: m, fastest }: { model: ModelOption; fastest: number }): React.JSX.Element {
+  const tps = m.tokens_per_second
+  const share = tps && fastest ? tps / fastest : 0
+  const tags = [
+    m.reasoning && 'Reasoning',
+    m.vision ? 'Vision' : 'Text',
+    m.is_default && 'Default',
+    m.is_default_fast && 'Fast default'
+  ].filter(Boolean) as string[]
+
+  return (
+    <div className="model-card" aria-live="polite">
+      <div className="model-card-head">
+        <ModelLogo vendor={m.vendor} model={m.id} size={30} />
+        <span className="menu-text">
+          <b>{m.label}</b>
+          <span>{m.vendor}</span>
+        </span>
+      </div>
+
+      <div className="model-speed">
+        <span className="model-stat-label">Speed</span>
+        <div className="model-speed-value">
+          {tps ? Math.round(tps) : '—'}
+          <small>tok/s</small>
+        </div>
+        <div className="model-speed-bar">
+          <span style={{ width: `${Math.max(share * 100, tps ? 4 : 0)}%` }} />
+        </div>
+      </div>
+
+      <dl className="model-stats">
+        <div>
+          <dt>Context</dt>
+          <dd>{formatTokens(m.context_window)}</dd>
+        </div>
+        <div>
+          <dt>Input</dt>
+          <dd>
+            {formatPrice(m.input_price)}
+            <small>/1M</small>
+          </dd>
+        </div>
+        <div>
+          <dt>Output</dt>
+          <dd>
+            {formatPrice(m.output_price)}
+            <small>/1M</small>
+          </dd>
+        </div>
+      </dl>
+
+      <div className="model-tags">
+        {tags.map((t) => (
+          <span key={t} className="model-tag">
+            {t}
+          </span>
+        ))}
+      </div>
+
+      <code className="model-card-id" title={m.id}>
+        {m.id}
+      </code>
+    </div>
   )
 }
 
