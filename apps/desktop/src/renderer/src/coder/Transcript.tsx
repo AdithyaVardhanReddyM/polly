@@ -1,15 +1,34 @@
 import { Bot, Brain, ChevronRight, CircleAlert, Info, TriangleAlert } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { type ToolItem, type TranscriptItem, useCoder } from '../store/coder'
+import type { ApprovalRequired, Source } from '../../../shared/contracts'
+import { type RunState, type ToolItem, type TranscriptItem, useCoder } from '../store/coder'
 import { ApprovalCard } from './ApprovalCard'
 import { DiffView } from './DiffView'
-import { Markdown } from './Markdown'
+import { CitationContext, Markdown } from './Markdown'
 import { formatDuration, toolMeta } from './toolMeta'
 
 export function Transcript(): React.JSX.Element {
   const items = useCoder((s) => s.items)
   const approval = useCoder((s) => s.approval)
   const run = useCoder((s) => s.run)
+  return <TranscriptView items={items} run={run} approval={approval} />
+}
+
+/** A conversation with any agent. `sources` resolve `[n]` citations. */
+export function TranscriptView({
+  items,
+  run,
+  approval = null,
+  sources = [],
+  footer
+}: {
+  items: TranscriptItem[]
+  run: RunState
+  approval?: ApprovalRequired | null
+  sources?: Source[]
+  /** Shown after the last message (a scorecard, a report). */
+  footer?: React.ReactNode
+}): React.JSX.Element {
   const scroller = useRef<HTMLDivElement>(null)
   const [pinned, setPinned] = useState(true)
 
@@ -17,7 +36,7 @@ export function Transcript(): React.JSX.Element {
   useLayoutEffect(() => {
     const el = scroller.current
     if (el && pinned) el.scrollTop = el.scrollHeight
-  }, [items, approval, pinned])
+  }, [items, approval, footer, pinned])
 
   useEffect(() => {
     const el = scroller.current
@@ -39,40 +58,43 @@ export function Transcript(): React.JSX.Element {
   const thinking = run === 'running' && !moving
 
   return (
-    <div className="transcript" ref={scroller}>
-      <div className="transcript-inner">
-        {items.map((item, i) => {
-          // A turn that only thought before acting folds into the card it led to.
-          const next = items[i + 1]
-          if (
-            item.kind === 'assistant' &&
-            !item.text &&
-            !item.streaming &&
-            next &&
-            (next.kind === 'tool' || next.kind === 'subagent')
-          )
-            return null
-          const prev = items[i - 1]
-          const thought =
-            prev && prev.kind === 'assistant' && !prev.text && !prev.streaming ? prev.reasoning : ''
-          return <Item key={`${item.kind}-${item.id}`} item={item} thought={thought} />
-        })}
-        {thinking && <Working />}
-        {approval && <ApprovalCard approval={approval} />}
+    <CitationContext.Provider value={sources}>
+      <div className="transcript" ref={scroller}>
+        <div className="transcript-inner">
+          {items.map((item, i) => {
+            // A turn that only thought before acting folds into the card it led to.
+            const next = items[i + 1]
+            if (
+              item.kind === 'assistant' &&
+              !item.text &&
+              !item.streaming &&
+              next &&
+              (next.kind === 'tool' || next.kind === 'subagent')
+            )
+              return null
+            const prev = items[i - 1]
+            const thought =
+              prev && prev.kind === 'assistant' && !prev.text && !prev.streaming ? prev.reasoning : ''
+            return <Item key={`${item.kind}-${item.id}`} item={item} thought={thought} />
+          })}
+          {thinking && <Working />}
+          {approval && <ApprovalCard approval={approval} />}
+          {footer}
+        </div>
+        {!pinned && (
+          <button
+            className="jump-latest"
+            onClick={() => {
+              setPinned(true)
+              const el = scroller.current
+              if (el) el.scrollTop = el.scrollHeight
+            }}
+          >
+            Jump to latest
+          </button>
+        )}
       </div>
-      {!pinned && (
-        <button
-          className="jump-latest"
-          onClick={() => {
-            setPinned(true)
-            const el = scroller.current
-            if (el) el.scrollTop = el.scrollHeight
-          }}
-        >
-          Jump to latest
-        </button>
-      )}
-    </div>
+    </CitationContext.Provider>
   )
 }
 

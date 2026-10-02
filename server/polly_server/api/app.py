@@ -10,10 +10,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from polly_server import __version__, persistence
-from polly_server.agents import catalog
-from polly_server.api.routers import models, projects, sessions
+from polly_server.agents import builders, catalog
+from polly_server.api.routers import integrations, models, projects, reviews, sessions
 from polly_server.api.schemas import AgentList, AgentSummary, Health, ModelInfo, Provider
 from polly_server.config import settings
+from polly_server.integrations import github
 
 
 @asynccontextmanager
@@ -39,6 +40,8 @@ app.add_middleware(
 app.include_router(models.router)
 app.include_router(projects.router)
 app.include_router(sessions.router)
+app.include_router(integrations.router)
+app.include_router(reviews.router)
 
 
 @app.get("/health", response_model=Health)
@@ -58,17 +61,18 @@ def health() -> Health:
             configured=settings.sandbox_configured,
         ),
         search=Provider(provider="Tavily", configured=bool(settings.tavily_api_key)),
+        github=Provider(provider="GitHub", configured=github.status().connected),
     )
 
 
 @app.get("/agents", response_model=AgentList)
 def list_agents() -> AgentList:
-    return AgentList(agents=[AgentSummary.of(a) for a in catalog.CATALOG])
+    return AgentList(agents=[AgentSummary.of(a) for a in catalog.CATALOG if builders.listed(a)])
 
 
 @app.get("/agents/{agent_id}", response_model=AgentSummary)
 def get_agent(agent_id: str) -> AgentSummary:
     spec = catalog.get(agent_id)
-    if spec is None:
+    if spec is None or not builders.listed(spec):
         raise HTTPException(status_code=404, detail=f"no agent named {agent_id!r}")
     return AgentSummary.of(spec)

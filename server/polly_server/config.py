@@ -19,6 +19,8 @@ NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
 # Ids are case-sensitive on Token Factory; see `model_registry.MODELS`.
 DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 DEFAULT_FAST_MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+# Serious reasoning: scoring pull requests, critiquing research drafts.
+DEFAULT_STRONG_MODEL = "nvidia/Nemotron-3-Ultra-550b-a55b"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -36,9 +38,19 @@ class Settings:
     nebius_project_id: str
     model: str
     fast_model: str
+    strong_model: str
 
     sandbox_provider: str
     tavily_api_key: str
+
+    # GitHub: an OAuth App's client id (Device Flow, no secret needed) and/or
+    # a personal access token used when nobody has connected in the app.
+    github_client_id: str
+    github_token: str
+
+    @property
+    def search_configured(self) -> bool:
+        return bool(self.tavily_api_key)
 
     @property
     def model_configured(self) -> bool:
@@ -67,8 +79,11 @@ def load() -> Settings:
         nebius_project_id=_env("NEBIUS_PROJECT_ID"),
         model=_env("POLLY_MODEL", DEFAULT_MODEL),
         fast_model=_env("POLLY_FAST_MODEL", DEFAULT_FAST_MODEL),
+        strong_model=_env("POLLY_STRONG_MODEL", DEFAULT_STRONG_MODEL),
         sandbox_provider=_env("POLLY_SANDBOX", "contree"),
         tavily_api_key=_env("TAVILY_API_KEY"),
+        github_client_id=_env("GITHUB_CLIENT_ID"),
+        github_token=_env("GITHUB_TOKEN"),
     )
 
 

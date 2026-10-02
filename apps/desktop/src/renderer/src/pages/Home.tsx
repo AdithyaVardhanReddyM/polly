@@ -4,22 +4,33 @@ import type { AgentSummary } from '../../../shared/contracts'
 import { AgentAvatar } from '../components/AgentAvatar'
 
 const STARTERS = [
-  'Fix the failing tests in my repo and open a PR',
+  'Fix the failing tests in my repo',
   'Research the best open models for on-device agents',
-  'Draft replies to everything in my inbox that needs one',
-  'Turn these notes into a 10-slide deck'
+  'Score this pull request: ',
+  'What changed in Python 3.13 that could break my code?'
 ]
 
 interface Props {
   agents: AgentSummary[]
+  /** Agents that can take a task from here. */
+  runnable: string[]
   onBrowse: () => void
   /** Open the Coder workspace. */
   onCode: () => void
+  /** Hand a task to an agent (`auto` picks one). */
+  onStart: (agentId: string, text: string) => void
 }
 
-export function Home({ agents, onBrowse, onCode }: Props): React.JSX.Element {
+export function Home({ agents, runnable, onBrowse, onCode, onStart }: Props): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const [agentId, setAgentId] = useState<string>('auto')
+  const picked = agents.find((a) => a.id === agentId)
+  const canRun = agentId === 'auto' || (!!picked && picked.status === 'ready' && runnable.includes(agentId))
+
+  const submit = (): void => {
+    if (!draft.trim() || !canRun) return
+    onStart(agentId, draft.trim())
+  }
 
   return (
     <div className="home">
@@ -46,11 +57,23 @@ export function Home({ agents, onBrowse, onCode }: Props): React.JSX.Element {
         </p>
       </div>
 
-      <form className="composer" onSubmit={(e) => e.preventDefault()}>
+      <form
+        className="composer"
+        onSubmit={(e) => {
+          e.preventDefault()
+          submit()
+        }}
+      >
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Describe a task…"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              submit()
+            }
+          }}
+          placeholder="Describe a task, ask a question, or paste a pull request link…"
           rows={3}
         />
         <div className="composer-bar">
@@ -72,8 +95,8 @@ export function Home({ agents, onBrowse, onCode }: Props): React.JSX.Element {
           <button
             type="submit"
             className="send"
-            disabled
-            title="Agents are not wired up yet"
+            disabled={!draft.trim() || !canRun}
+            title={canRun ? 'Send (Enter)' : `${picked?.name ?? 'This agent'} is not available yet`}
           >
             <ArrowUp />
           </button>

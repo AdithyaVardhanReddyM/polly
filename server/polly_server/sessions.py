@@ -1,9 +1,14 @@
-"""Sessions: one conversation with the Coder inside a project.
+"""Sessions: one conversation with an agent.
+
+A Coder session lives inside a project; research and review sessions may
+have no project at all, and a change-research session points back at the
+Coder session it reports on (`parent_session_id`).
 
 A session is a LangGraph thread (`thread_id == session.id`) plus the bits
 the app needs without replaying the thread: title, model, mode, usage and
 status. Each lives in `<data_dir>/sessions/<id>/session.json`; the same folder
-holds the session's tracked changes and compacted history.
+holds the session's tracked changes, compacted history and artifacts
+(sources, reports, scorecards).
 """
 
 from __future__ import annotations
@@ -38,7 +43,12 @@ class UsageTotals(BaseModel):
 
 class Session(BaseModel):
     id: str
-    project_id: str
+    project_id: str | None = None
+    # Which catalog agent this conversation is with. Sessions saved before
+    # there was more than one agent are Coder sessions.
+    agent_id: str = "coder"
+    # The session this one was started from (research on a Coder change).
+    parent_session_id: str | None = None
     title: str = ""
     model: str
     mode: Mode = "supervised"
@@ -63,11 +73,21 @@ def _file(sid: str) -> Path:
     return session_dir(sid) / "session.json"
 
 
-def create(project_id: str, *, model: str, mode: Mode, title: str = "") -> Session:
+def create(
+    project_id: str | None,
+    *,
+    model: str,
+    mode: Mode,
+    title: str = "",
+    agent_id: str = "coder",
+    parent_session_id: str | None = None,
+) -> Session:
     now = time.time()
     session = Session(
         id=uuid.uuid4().hex[:16],
         project_id=project_id,
+        agent_id=agent_id,
+        parent_session_id=parent_session_id,
         title=title,
         model=model,
         mode=mode,
@@ -98,19 +118,31 @@ def update(session_id: str, **changes) -> Session:
     return save(session.model_copy(update={**changes, "updated_at": time.time()}))
 
 
-def list_for(project_id: str) -> list[Session]:
+def _all() -> list[Session]:
     root = settings.data_path("sessions")
     found: list[Session] = []
     for entry in root.iterdir():
         path = entry / "session.json"
         if path.is_file():
             try:
-                s = Session.model_validate_json(path.read_text())
+                found.append(Session.model_validate_json(path.read_text()))
             except ValueError:
                 continue
-            if s.project_id == project_id:
-                found.append(s)
     return sorted(found, key=lambda s: s.updated_at, reverse=True)
+
+
+def list_for(project_id: str, agent_id: str = "coder") -> list[Session]:
+    """A project's sessions with one agent (the Coder by default)."""
+    return [s for s in _all() if s.project_id == project_id and s.agent_id == agent_id]
+
+
+def list_agent(agent_id: str) -> list[Session]:
+    """Top-level sessions with an agent, across projects."""
+    return [s for s in _all() if s.agent_id == agent_id and s.parent_session_id is None]
+
+
+def list_children(parent_id: str) -> list[Session]:
+    return [s for s in _all() if s.parent_session_id == parent_id]
 
 
 def delete(session_id: str) -> bool:

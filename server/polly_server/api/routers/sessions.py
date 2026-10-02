@@ -6,12 +6,15 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from polly_server import model_registry, projects, sessions
+from polly_server import artifacts, model_registry, projects, sessions
+from polly_server.agents import builders, catalog
 from polly_server.api.schemas import (
+    Artifacts,
     ChangePaths,
     DecisionsIn,
     MessageIn,
     SessionCreate,
+    SessionList,
     SessionPatch,
     Transcript,
 )
@@ -21,9 +24,10 @@ from polly_server.coder.changes import FileChange, FileDiff
 from polly_server.coder.events import approval_payload, wire_message
 from polly_server.coder.permissions import Rule
 from polly_server.coder.prompt import INIT_PROMPT
-from polly_server.coder.runs import Run, SessionBusy, manager, sse
+from polly_server.coder.runs import NothingToResearch, Run, SessionBusy, manager, sse
 from polly_server.config import settings
 from polly_server.projects import Project
+from polly_server.research import sources
 from polly_server.sessions import Session
 
 router = APIRouter(tags=["sessions"])
@@ -39,15 +43,29 @@ def _session(session_id: str) -> Session:
 
 
 def _project_of(session: Session) -> Project:
-    project = projects.get(session.project_id)
+    project = projects.get(session.project_id) if session.project_id else None
     if project is None:
+        if session.project_id is None:
+            raise HTTPException(400, "this session has no project")
         raise HTTPException(410, "the session's project was removed")
     return project
+
+
+def _project_for_run(session: Session) -> Project | None:
+    """The Coder needs its project; the other agents run without one."""
+    if session.agent_id == "coder":
+        return _project_of(session)
+    return projects.get(session.project_id) if session.project_id else None
 
 
 def _require_model() -> None:
     if not settings.model_configured:
         raise HTTPException(503, "NEBIUS_API_KEY is not set; see .env.example")
+
+
+def _require_search(agent_id: str) -> None:
+    if builders.needs_search(agent_id) and not builders.search_ready():
+        raise HTTPException(503, "TAVILY_API_KEY is not set; research needs web search")
 
 
 def _stream(run: Run, after: int = -1) -> StreamingResponse:
@@ -60,15 +78,35 @@ def _stream(run: Run, after: int = -1) -> StreamingResponse:
 
 @router.post("/sessions", response_model=Session, status_code=201)
 def create_session(body: SessionCreate) -> Session:
-    project = projects.get(body.project_id)
-    if project is None:
-        raise HTTPException(404, f"no project {body.project_id!r}")
-    model = body.model or project.settings.default_model
+    spec = catalog.get(body.agent_id)
+    if spec is None or not builders.listed(spec):
+        raise HTTPException(404, f"no agent {body.agent_id!r}")
+    if spec.status != "ready":
+        raise HTTPException(400, f"{spec.name} is not available yet")
+
+    if spec.id == "coder":
+        project = projects.get(body.project_id) if body.project_id else None
+        if project is None:
+            raise HTTPException(404, f"no project {body.project_id!r}")
+        model = body.model or project.settings.default_model
+        mode = body.mode or project.settings.default_mode
+        project_id: str | None = project.id
+    else:
+        if body.project_id and projects.get(body.project_id) is None:
+            raise HTTPException(404, f"no project {body.project_id!r}")
+        model = body.model or builders.default_model(spec.id)
+        mode = "plan"  # research and review never write to disk
+        project_id = body.project_id
     if not model_registry.known(model):
         raise HTTPException(400, f"unknown model {model!r}")
-    return sessions.create(
-        project.id, model=model, mode=body.mode or project.settings.default_mode, title=body.title
-    )
+    return sessions.create(project_id, model=model, mode=mode, title=body.title, agent_id=spec.id)
+
+
+@router.get("/sessions", response_model=SessionList)
+def list_sessions(agent_id: str) -> SessionList:
+    """Top-level sessions with one agent, newest first (Coder sessions are
+    listed per project: `GET /projects/{id}/sessions`)."""
+    return SessionList(sessions=sessions.list_agent(agent_id))
 
 
 @router.get("/sessions/{session_id}", response_model=Session)
@@ -84,6 +122,8 @@ def patch_session(session_id: str, body: SessionPatch) -> Session:
         raise HTTPException(400, f"unknown model {changes['model']!r}")
     if session.id in manager.active and ("model" in changes or "mode" in changes):
         raise HTTPException(409, "stop the current run before changing the model or mode")
+    if session.agent_id != "coder":
+        changes.pop("mode", None)
     return sessions.update(session_id, **changes)
 
 
@@ -91,6 +131,7 @@ def patch_session(session_id: str, body: SessionPatch) -> Session:
 async def delete_session(session_id: str) -> None:
     await manager.cancel(session_id)
     coder_agent.forget(session_id)
+    builders.forget(session_id)
     if not sessions.delete(session_id):
         raise HTTPException(404, f"no session {session_id!r}")
 
@@ -98,16 +139,16 @@ async def delete_session(session_id: str) -> None:
 @router.get("/sessions/{session_id}/messages", response_model=Transcript)
 async def transcript(session_id: str) -> Transcript:
     session = _session(session_id)
-    project = _project_of(session)
+    project = _project_for_run(session)
     messages: list[dict[str, Any]] = []
     todos: list[dict[str, Any]] = []
     pending = None
     # The graph merges the checkpoint with its pending writes for us; raw
     # checkpoints only carry the channels the last step touched.
     try:
-        graph = runs.build_coder(project, session)
-    except RuntimeError:
-        graph = None  # no model key: nothing to replay with
+        graph = runs.build_graph(project, session)
+    except (RuntimeError, LookupError):
+        graph = None  # no model key, or an agent we no longer run
     if graph is not None:
         state = await graph.aget_state({"configurable": {"thread_id": session.id}})
         messages = [w for m in state.values.get("messages", []) if (w := wire_message(m))]
@@ -128,7 +169,8 @@ async def transcript(session_id: str) -> Transcript:
 async def send_message(session_id: str, body: MessageIn) -> StreamingResponse:
     _require_model()
     session = _session(session_id)
-    project = _project_of(session)
+    _require_search(session.agent_id)
+    project = _project_for_run(session)
     if session.status == "awaiting_approval":
         raise HTTPException(409, "decide on the pending action first")
     try:
@@ -142,7 +184,7 @@ async def send_message(session_id: str, body: MessageIn) -> StreamingResponse:
 async def decide(session_id: str, body: DecisionsIn) -> StreamingResponse:
     _require_model()
     session = _session(session_id)
-    project = _project_of(session)
+    project = _project_for_run(session)
     if session.status != "awaiting_approval":
         raise HTTPException(409, "this session is not waiting for a decision")
 
@@ -152,7 +194,7 @@ async def decide(session_id: str, body: DecisionsIn) -> StreamingResponse:
             body.decisions[remembered.index] if remembered.index < len(body.decisions) else None
         )
         tool = _pending_tool_name(session, remembered.index)
-        if decision and decision.type == "approve" and tool:
+        if decision and decision.type == "approve" and tool and project is not None:
             permissions.add_rule(project, Rule(tool=tool, pattern=remembered.pattern))
 
     decisions = [d.model_dump(exclude_none=True) for d in body.decisions]
@@ -247,3 +289,42 @@ def revert_changes(session_id: str, body: ChangePaths) -> list[FileChange]:
     paths = body.paths or [c.path for c in tracker.list()]
     tracker.revert(paths)
     return tracker.list()
+
+
+# ---------- research and artifacts ----------
+
+
+@router.post("/sessions/{session_id}/research", response_model=Session, status_code=201)
+async def research_changes(session_id: str) -> Session:
+    """Research a Coder session's pending changes now (it also happens on its
+    own after each Coder run, unless the project turned it off)."""
+    _require_model()
+    session = _session(session_id)
+    if session.agent_id != "coder":
+        raise HTTPException(400, "only Coder sessions have changes to research")
+    if session.id in manager.active:
+        raise HTTPException(409, "wait for the Coder to finish first")
+    project = _project_of(session)
+    try:
+        return await manager.research_change(project, session)
+    except NothingToResearch as why:
+        code = 503 if "not set" in str(why) else 409
+        raise HTTPException(code, str(why)) from None
+
+
+@router.get("/sessions/{session_id}/research", response_model=SessionList)
+def research_sessions(session_id: str) -> SessionList:
+    """Sessions started from this one (change research), newest first."""
+    _session(session_id)
+    return SessionList(sessions=sessions.list_children(session_id))
+
+
+@router.get("/sessions/{session_id}/artifacts", response_model=Artifacts)
+def session_artifacts(session_id: str) -> Artifacts:
+    session = _session(session_id)
+    return Artifacts(
+        sources=[s.model_dump() for s in sources.all_for(session.id)],
+        report=artifacts.load(session.id, "report"),
+        scorecard=artifacts.load(session.id, "scorecard"),
+        pr=artifacts.load(session.id, "pr"),
+    )

@@ -80,6 +80,8 @@ interface CoderState {
   usage: UsageSnapshot
   error: string | null
   lastSeq: number
+  /** The latest change research for this session (a child session). */
+  researchId: string | null
 
   // actions
   boot: () => Promise<void>
@@ -98,6 +100,8 @@ interface CoderState {
   acceptChanges: (paths?: string[]) => Promise<void>
   revertChanges: (paths?: string[]) => Promise<void>
   generateGuide: () => Promise<void>
+  researchNow: () => Promise<void>
+  setAutoResearch: (on: boolean) => Promise<void>
   clearError: () => void
 }
 
@@ -192,9 +196,10 @@ function subagentFor(call: ToolCallRef): Extract<TranscriptItem, { kind: 'subage
   }
 }
 
-/** Apply one stream event to the transcript. Pure: returns new arrays. */
-export function reduce(items: TranscriptItem[], event: CoderEvent): TranscriptItem[] {
-  const isMain = (agent: string): boolean => agent === 'coder'
+/** Apply one stream event to the transcript. Pure: returns new arrays.
+ * `main` is the agent whose messages are the conversation; others are subagents. */
+export function reduce(items: TranscriptItem[], event: CoderEvent, main = 'coder'): TranscriptItem[] {
+  const isMain = (agent: string): boolean => agent === main
   const runningTask = (agent: string): number => {
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i]
@@ -429,6 +434,9 @@ export const useCoder = create<CoderState>((set, get) => {
         patch.run = event.status === 'awaiting_approval' ? 'awaiting_approval' : 'idle'
         if (event.status !== 'awaiting_approval') patch.approval = null
         break
+      case 'research.started':
+        patch.researchId = event.session_id
+        break
     }
     set(patch)
   }
@@ -452,7 +460,8 @@ export const useCoder = create<CoderState>((set, get) => {
       approval: null,
       run: 'idle',
       usage: { session: EMPTY_USAGE, contextTokens: 0, contextWindow: null },
-      lastSeq: -1
+      lastSeq: -1,
+      researchId: null
     }
   }
 
@@ -475,6 +484,7 @@ export const useCoder = create<CoderState>((set, get) => {
     usage: { session: EMPTY_USAGE, contextTokens: 0, contextWindow: null },
     error: null,
     lastSeq: -1,
+    researchId: null,
 
     async boot() {
       const [models, projects] = await Promise.all([api.models(), api.projects.list()])
@@ -487,7 +497,7 @@ export const useCoder = create<CoderState>((set, get) => {
       const fromHash = window.location.hash.match(/^#coder\/([\w-]+)/)?.[1] ?? null
       if (fromHash) {
         const s = await api.sessions.get(fromHash)
-        if (s.ok) {
+        if (s.ok && s.data.project_id) {
           await get().selectProject(s.data.project_id)
           await get().openSession(fromHash)
           return
@@ -539,18 +549,26 @@ export const useCoder = create<CoderState>((set, get) => {
       controller?.abort()
       set({ ...resetSession(), sessionId: id })
       sessionHash(id)
-      const [res, changes] = await Promise.all([api.sessions.transcript(id), api.sessions.changes(id)])
+      const [res, changes, research] = await Promise.all([
+        api.sessions.transcript(id),
+        api.sessions.changes(id),
+        api.sessions.research(id)
+      ])
       if (get().sessionId !== id) return
       if (!res.ok) {
         set({ error: res.error })
         return
       }
       const t = res.data
+      const latest = research.ok
+        ? [...research.data].sort((a, b) => b.created_at - a.created_at)[0]
+        : undefined
       set({
         session: t.session,
         items: fromWire(t.messages),
         todos: t.todos,
         changes: changes.ok ? changes.data : [],
+        researchId: latest?.id ?? null,
         approval: t.pending_approval,
         run: t.pending_approval ? 'awaiting_approval' : t.run_id ? 'running' : 'idle',
         usage: {
@@ -717,6 +735,22 @@ export const useCoder = create<CoderState>((set, get) => {
       await get().openSession(res.data.id)
     },
 
+    async researchNow() {
+      const sid = get().sessionId
+      if (!sid) return
+      const res = await api.sessions.researchNow(sid)
+      if (res.ok) set({ researchId: res.data.id })
+      else set({ error: res.error })
+    },
+
+    async setAutoResearch(on) {
+      const pid = get().projectId
+      if (!pid) return
+      const res = await api.projects.update(pid, { auto_research: on })
+      if (res.ok) set({ projects: get().projects.map((p) => (p.id === pid ? res.data : p)) })
+      else set({ error: res.error })
+    },
+
     clearError() {
       set({ error: null })
     }
@@ -733,7 +767,9 @@ function draftSession(
   const now = Date.now() / 1000
   return {
     id: '',
-    project_id: projectId ?? '',
+    project_id: projectId,
+    agent_id: 'coder',
+    parent_session_id: null,
     title: '',
     model,
     mode,

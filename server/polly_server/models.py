@@ -74,8 +74,18 @@ def _nebius_chat_class() -> type:
     return NebiusChat
 
 
+def tier_model(tier: str) -> str:
+    """The configured model id for a tier: Nano for fast calls, Super by
+    default, Ultra when the job needs serious reasoning."""
+    if tier == "fast":
+        return settings.fast_model
+    if tier == "strong":
+        return settings.strong_model
+    return settings.model
+
+
 def chat_model(
-    tier: Literal["default", "fast"] = "default",
+    tier: Literal["default", "fast", "strong"] = "default",
     *,
     model: str | None = None,
     **kwargs: Any,
@@ -89,7 +99,7 @@ def chat_model(
     if not settings.model_configured:
         raise RuntimeError("NEBIUS_API_KEY is not set; see .env.example")
 
-    model_id = model or (settings.fast_model if tier == "fast" else settings.model)
+    model_id = model or tier_model(tier)
     spec = model_registry.get(model_id)
     options: dict[str, Any] = {
         # Token Factory is OpenAI-compatible; ask for usage in the stream so

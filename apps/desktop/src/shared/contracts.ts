@@ -58,6 +58,7 @@ export interface ServerHealth {
   model: { provider: string; id: string; configured: boolean }
   sandbox: { provider: string; configured: boolean }
   search: { provider: string; configured: boolean }
+  github: { provider: string; configured: boolean }
 }
 
 // ---------- models ----------
@@ -96,6 +97,8 @@ export interface ProjectSettings {
   default_mode: PermissionMode
   command_allowlist: string[]
   command_denylist: string[]
+  /** Research each Coder change against docs and advisories when a run ends. */
+  auto_research: boolean
 }
 
 export interface Project {
@@ -130,7 +133,12 @@ export interface UsageTotals {
 
 export interface Session {
   id: string
-  project_id: string
+  /** The Coder's project; null for research and review sessions. */
+  project_id: string | null
+  /** coder · researcher · deep-research · reviewer · change-research */
+  agent_id: string
+  /** Set on change research started from a Coder session. */
+  parent_session_id: string | null
   title: string
   model: string
   mode: PermissionMode
@@ -230,6 +238,139 @@ export interface ProjectMemory {
   memory_md: string | null
 }
 
+// ---------- research and reviews ----------
+
+/** A page an agent read or found, numbered for citations: `[n]`. */
+export interface Source {
+  id: number
+  url: string
+  title: string
+  favicon: string | null
+}
+
+export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info'
+
+export interface ChangeFinding {
+  severity: Severity
+  title: string
+  detail: string
+  file: string | null
+  sources: number[]
+}
+
+/** What change research hands in after a Coder run. */
+export interface ChangeReport {
+  summary: string
+  verdict: 'looks_good' | 'needs_attention' | 'risky'
+  findings: ChangeFinding[]
+  pr_title: string
+  pr_description: string
+  sources: Source[]
+  created_at: number
+}
+
+export interface ScoreCategory {
+  key: string
+  label: string
+  weight: number
+  /** After Polly's caps. */
+  score: number
+  /** What the model gave before any cap. */
+  model_score: number
+  rationale: string
+  evidence: string[]
+}
+
+export interface ReviewFinding {
+  severity: Severity
+  title: string
+  detail: string
+  file: string | null
+  line: number | null
+  suggestion: string | null
+  sources: number[]
+}
+
+export interface CIState {
+  state: 'passing' | 'failing' | 'pending' | 'none'
+  failing?: string[]
+  pending?: string[]
+  passing?: number
+}
+
+export interface PRFacts {
+  url: string
+  slug: string
+  title: string
+  author: string | null
+  state?: string
+  draft?: boolean
+  base?: string
+  head?: string
+  additions: number
+  deletions: number
+  changed_files: number
+  has_description?: boolean
+  linked_issue?: boolean
+  tests_touched?: string[]
+  manifests_touched?: string[]
+  ci: CIState
+  partial: boolean
+}
+
+export interface Scorecard {
+  total: number
+  raw_total: number
+  grade: 'A' | 'B' | 'C' | 'D' | 'F'
+  verdict: 'approve' | 'comment' | 'request_changes'
+  adjustments: string[]
+  categories: ScoreCategory[]
+  summary: string
+  strengths: string[]
+  findings: ReviewFinding[]
+  sources: Source[]
+  pr: Partial<PRFacts>
+  created_at: number
+}
+
+export interface Artifacts {
+  sources: Source[]
+  report: ChangeReport | null
+  scorecard: Scorecard | null
+  pr: PRFacts | null
+}
+
+// ---------- integrations ----------
+
+export interface GitHubStatus {
+  connected: boolean
+  login: string | null
+  source: 'oauth' | 'pat' | 'env' | null
+  scopes: string[]
+  /** Whether the server has an OAuth App client id for the Device Flow. */
+  device_flow_available: boolean
+}
+
+export interface IntegrationsStatus {
+  github: GitHubStatus
+  tavily: { provider: string; configured: boolean }
+}
+
+export interface DeviceStart {
+  flow_id: string
+  user_code: string
+  verification_uri: string
+  expires_in: number
+  interval: number
+}
+
+export interface DevicePoll {
+  status: 'pending' | 'connected' | 'expired' | 'denied' | 'error'
+  interval: number | null
+  message: string | null
+  github: GitHubStatus | null
+}
+
 // ---------- coder: the event stream ----------
 
 interface EventBase {
@@ -241,6 +382,7 @@ export type CoderEvent =
   | (EventBase & {
       type: 'run.started'
       session_id: string
+      agent_id?: string
       model: string
       mode: PermissionMode
     })
@@ -299,6 +441,15 @@ export type CoderEvent =
         replayed?: boolean
       })
   | (EventBase & { type: 'compaction'; node: string })
+  | (EventBase & { type: 'sources.added'; sources: Source[] })
+  | (EventBase & { type: 'report'; report: ChangeReport })
+  | (EventBase & { type: 'scorecard'; scorecard: Scorecard })
+  | (EventBase & {
+      type: 'research.started'
+      session_id: string
+      parent_session_id: string
+      title: string
+    })
   | (EventBase & {
       type: 'run.finished'
       status: 'completed' | 'awaiting_approval' | 'cancelled' | 'error'

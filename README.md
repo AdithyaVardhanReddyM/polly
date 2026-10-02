@@ -11,7 +11,7 @@
 
 ---
 
-> **Status:** in progress for the [Nebius × NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/). The **Coder** works end to end; the other agents are declared but not built yet.
+> **Status:** built for the [Nebius × NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/), track *Coding and Agentic Engineering*. The **Coder**, **Researcher**, **Deep Research** and **Reviewer** work end to end, and research runs on its own after every Coder change. The other agents are declared but not built yet.
 
 <p align="center">
   <img src="docs/screenshots/home.png" alt="Polly home: pick an agent and describe a task" width="100%" />
@@ -32,9 +32,9 @@ Agents are grouped into divisions. The first set:
 
 | Division | Agent | What it does |
 | --- | --- | --- |
-| **Coding** | **Coder** | Plans a change, edits the repo in its sandbox, runs the tests, opens a pull request. |
+| **Coding** | **Coder** | Plans a change, edits the repo, runs the tests, commits. Every change is then researched (below). |
 | | **Designer** | Sketches UI and builds working front-end prototypes, checked in a real browser. |
-| | **Reviewer** | Reviews pull requests in context, reproduces bugs in a sandbox, suggests fixes. |
+| | **Reviewer** | Paste a GitHub PR link: reads the diff in context, checks CI and dependencies, scores the PR out of 100. |
 | **Research** | **Researcher** | Fast, cited answers from the web. |
 | | **Deep Research** | Splits a question into threads, researches them in parallel, writes a structured report. |
 | **Everyday** | **Inbox** | Triage, replies in your voice, follow-ups. |
@@ -79,6 +79,76 @@ The first agent that works end to end. Open a project folder and Coder reads it,
 - **Models.** Pick per session: Nemotron 3 Super (default), Ultra, Nano and 3.5 Lightning, GLM 5.3 and 5.3 Flash, DeepSeek V4 Pro and Kimi K2.7 Code, all on Nebius Token Factory. Reasoning streams into a collapsible "Thought process".
 
 In this version the Coder works in a folder on your machine. Cloud sessions in sandboxes come next.
+
+### Research after every change
+
+When a Coder run finishes with file changes, Polly starts a **change research** run on its own. It reads the request, the Coder's summary and the diff, then checks the libraries and APIs the change uses against the web: current docs, deprecations, breaking changes and security advisories. It returns:
+
+- a **verification report** with a verdict (*Looks good*, *Needs attention*, *Risky*) and findings by severity, each tied to a file and to numbered sources, and
+- a **pull request title and description**, ready to copy.
+
+It shows up in the Coder's *Research* tab while it runs. Turn it off per project with *Research every change*, or run it by hand with *Research this change*. It runs on Super, with Nano scouts for the separate lookups.
+
+## Research and Deep Research
+
+- **Researcher** (quick) answers in a single pass: it searches, reads the pages that matter and replies with inline citations `[1]`, `[2]` linked to a numbered source list.
+- **Deep Research** plans the question as separate threads, sends **scouts** (Nemotron Nano) to research them in parallel, writes a draft, has a **critic** (Nemotron Ultra) check it for unsupported claims, gaps and contradictions, then writes the final cited report.
+
+Search and page extraction use Tavily. Every page an agent reads gets a stable number for the session, so citations in the answer, the sources panel and later reports all agree. Links open only if they are `http(s)`. Remote favicons are not loaded, so reading results never contacts those sites.
+
+## The Reviewer: score a pull request
+
+Paste `https://github.com/owner/repo/pull/123` into Home or the *Review* page. The Reviewer (Nemotron Ultra) reads the PR's overview, files and CI checks, opens files at the head commit when it needs context, and asks its **researcher** subagent (Nemotron Nano) to check dependencies and APIs on the web. It then submits a scorecard.
+
+**The model judges and Polly does the maths.** Each category gets a 0–10 score with a rationale and evidence (`path:line` or `[n]`). Polly applies fixed weights and caps, so the same review always gives the same number and every adjustment is shown.
+
+| Category | Weight |
+| --- | --- |
+| Correctness | 25 |
+| Tests & CI | 20 |
+| Security | 15 |
+| Maintainability | 15 |
+| Performance | 10 |
+| Scope & hygiene | 10 |
+| Docs | 5 |
+
+Caps:
+
+- If CI is failing, the total is capped at 60 and *Tests & CI* at 3/10.
+- A critical finding caps the total at 40.
+- A high-severity finding caps the total at 79.
+- If code changed but no tests did, *Tests & CI* is capped at 5/10.
+
+Grades are A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60 and F below that. The verdict is *Request changes* if there is any critical or high finding or the total is under 60, *Approve* at 80 or more, and *Comment* otherwise.
+
+**Posting is always yours.** *Post as PR comment* opens a preview of exactly what will be posted, and nothing reaches GitHub until you click *Post comment*. The agent itself has read-only GitHub tools. *Copy as Markdown* works without signing in.
+
+### Connecting GitHub
+
+Public PRs work without signing in, within GitHub's anonymous rate limit. To review private repos and to post comments, open **Integrations → GitHub** and either:
+
+1. **Sign in with GitHub (Device Flow).** Create an [OAuth App](https://github.com/settings/developers), tick **Enable Device Flow**, and set `GITHUB_CLIENT_ID` in `.env`. No client secret and no callback server are needed. The app shows a code; enter it on GitHub and Polly finishes the sign-in. It requests the `repo read:user` scopes.
+2. **Use a token.** Paste a fine-grained personal access token with *Pull requests: read* (add *write* to post comments), or set `GITHUB_TOKEN` in `.env`.
+
+The token stays on the server, in `.polly/secrets/github.json` with mode `0600`. It is never sent to the app.
+
+## Models per role
+
+All models are NVIDIA Nemotron, served by **Nebius Token Factory**. Heavy reasoning goes to Ultra, and fast or numerous calls go to Nano.
+
+| Role | Model |
+| --- | --- |
+| Coder | Nemotron 3 Super (selectable per session) |
+| Coder subagents: explorer, tester | Nemotron 3 Nano |
+| Researcher | Nemotron 3 Super |
+| Deep Research lead | Nemotron 3 Super |
+| Deep Research scouts | Nemotron 3 Nano |
+| Deep Research critic | **Nemotron 3 Ultra** |
+| Reviewer (scoring) | **Nemotron 3 Ultra** |
+| Reviewer's researcher | Nemotron 3 Nano |
+| Change research | Nemotron 3 Super, with Nano scouts |
+
+Override the tiers with `POLLY_MODEL`, `POLLY_FAST_MODEL` and `POLLY_STRONG_MODEL`.
 
 ## How it is built
 
@@ -127,8 +197,12 @@ server/
   polly_server/
     agents/            agent specs, the built-in catalog, and the runtime that builds them
     coder/             the Coder: prompt, permissions, change tracking, event stream, runs
-    tools/             tools agents pick by name (web search, git)
+    research/          Tavily client, numbered sources, prompts, research after the Coder
+    reviewer/          the Reviewer's prompt and the scoring rubric
+    integrations/      GitHub: Device Flow sign-in, token storage, PR API calls
+    tools/             tools agents pick by name (research, GitHub, git, reports)
     api/               FastAPI app, routers and wire schemas
+    artifacts.py       sources, reports and scorecards saved per session
     projects.py        project folders the Coder may work in
     sessions.py        conversations, their model, mode and usage
     model_registry.py  the Token Factory models on offer
@@ -147,7 +221,8 @@ docs/                  logo and other assets
 - Node.js 20+ and npm
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
 - A [Nebius Token Factory](https://tokenfactory.nebius.com) API key
-- Optional: a [Tavily](https://tavily.com) API key
+- A [Tavily](https://tavily.com) API key, for Research, Deep Research and research after the Coder
+- Optional: a GitHub OAuth App client ID or a personal access token (see [Connecting GitHub](#connecting-github))
 
 ### Setup
 
@@ -186,13 +261,42 @@ npm run typecheck           # TypeScript
 - [x] Chat with an agent: streaming runs, tool calls and subagents shown live
 - [x] Coder: permission modes, approvals, tracked changes, memory, sessions, model choice
 - [x] Approvals for coding actions
+- [x] Research and Deep Research with Tavily, with numbered citations
+- [x] Research after every Coder change: verification report and PR description
+- [x] Reviewer: score a GitHub PR, post the score as a comment after a preview
+- [x] GitHub sign-in (Device Flow) or a personal access token
 - [ ] Coder cloud sessions in sandboxes, with GitHub (push and pull requests)
-- [ ] Research and Deep Research with Tavily
 - [ ] Agent builder: instructions, skills, knowledge, tools
 - [ ] Integrations: Gmail, Calendar, Slack, Notion, Linear
 - [ ] Virtual desktops for computer-use agents
 - [ ] Approvals for every agent's actions with side effects
 - [ ] Web app
+
+## Hackathon notes
+
+### Demo script
+
+1. **Coder, then research.** Open a project and ask the Coder to make a change that touches a dependency. When it finishes, the *Research* tab opens by itself. Show the verdict, a cited finding and *Copy PR description*.
+2. **Reviewer.** On Home, paste a GitHub PR link and press Enter. Show the live tool steps, the PR panel (CI and size) and the scorecard: grade, category bars, any cap that was applied, and findings with suggestions.
+3. **Post the score.** Click *Post as PR comment*, show the preview, connect GitHub with the Device Flow if needed, then post and open the comment.
+4. **Deep Research.** Ask a comparison question in *Deep*. Show scouts running in parallel, the critic pass, and citations that link to the sources panel.
+
+### What changed during the submission period
+
+- New agents: Researcher, Deep Research and Reviewer, plus change research after the Coder.
+- Tavily search and extraction, with session-wide numbered sources and citations in the UI.
+- GitHub integration: Device Flow sign-in, token storage, PR reading tools and preview-then-post comments.
+- A deterministic PR scoring rubric with caps, grades and verdicts.
+- Model tiers: Ultra for scoring and critique, Nano for scouts and helpers.
+- Desktop: Research and Review pages, the Coder's Research tab, and a live Integrations page.
+
+### Feedback on Nebius Token Factory and Nemotron
+
+<!-- Fill in before submitting: what worked, what was hard, what you would want next. -->
+
+- **What worked:**
+- **What was hard:**
+- **Wishes:**
 
 ## License
 

@@ -1,6 +1,9 @@
 import {
+  BookOpen,
   Bot,
+  ClipboardCheck,
   Eye,
+  FileCode,
   FilePen,
   FilePlus,
   FileSearch,
@@ -8,9 +11,12 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GitCompare,
+  GitPullRequest,
+  Gauge,
   Globe,
   ListChecks,
   Search,
+  ShieldCheck,
   SquareTerminal,
   Trash2,
   Wrench
@@ -25,6 +31,11 @@ export interface ToolMeta {
 }
 
 const s = (v: unknown): string => (v === undefined || v === null ? '' : String(v))
+
+const prSlug = (url: unknown): string => {
+  const m = s(url).match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
+  return m ? `${m[1]}/${m[2]}#${m[3]}` : s(url)
+}
 
 export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta {
   const path = s(args.file_path ?? args.path).replace(/^\//, '') || '.'
@@ -53,6 +64,35 @@ export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta 
       return { icon: <ListChecks />, verb: 'Plan', target: 'Updated the plan' }
     case 'web_search':
       return { icon: <Globe />, verb: 'Search the web', target: s(args.query) }
+    case 'research_search':
+      return { icon: <Globe />, verb: 'Search', target: s(args.query) }
+    case 'web_extract': {
+      const urls = Array.isArray(args.urls) ? args.urls.map(s) : []
+      const hosts = urls.map((u) => {
+        try {
+          return new URL(u).hostname.replace(/^www\./, '')
+        } catch {
+          return u
+        }
+      })
+      return { icon: <BookOpen />, verb: 'Read', target: hosts.join(', ') }
+    }
+    case 'github_pr_overview':
+      return { icon: <GitPullRequest />, verb: 'Open PR', target: prSlug(args.pr_url) }
+    case 'github_pr_files':
+      return {
+        icon: <GitCompare />,
+        verb: 'Read diff',
+        target: `${prSlug(args.pr_url)}${args.page && args.page !== 1 ? `  page ${s(args.page)}` : ''}`
+      }
+    case 'github_file':
+      return { icon: <FileCode />, verb: 'Read', target: s(args.path) }
+    case 'github_pr_checks':
+      return { icon: <ShieldCheck />, verb: 'Check CI', target: prSlug(args.pr_url) }
+    case 'submit_scorecard':
+      return { icon: <Gauge />, verb: 'Score', target: 'Handed in the scorecard' }
+    case 'submit_change_report':
+      return { icon: <ClipboardCheck />, verb: 'Report', target: s(args.pr_title) }
     case 'git_status':
       return { icon: <GitCompare />, verb: 'Git status', target: '' }
     case 'git_diff':

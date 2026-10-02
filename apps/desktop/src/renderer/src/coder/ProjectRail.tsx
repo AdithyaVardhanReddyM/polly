@@ -127,7 +127,7 @@ function SessionList(): React.JSX.Element {
   )
 }
 
-function StatusDot({ session }: { session: Session }): React.JSX.Element {
+export function StatusDot({ session }: { session: Session }): React.JSX.Element {
   const title = {
     idle: 'Idle',
     running: 'Working',

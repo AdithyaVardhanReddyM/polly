@@ -53,6 +53,9 @@ class ProjectSettings(BaseModel):
     command_denylist: list[str] = Field(
         default_factory=lambda: ["rm -rf /", "sudo ", "git push --force", "git push -f"]
     )
+    # When a Coder run finishes with changes, research them: docs, deprecations,
+    # advisories, and a PR description.
+    auto_research: bool = True
 
 
 class Project(BaseModel):
