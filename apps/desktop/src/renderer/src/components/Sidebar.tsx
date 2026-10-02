@@ -1,13 +1,32 @@
-import { Bot, CodeXml, House, Monitor, Plug, Settings as Cog } from 'lucide-react'
+import {
+  Bot,
+  CodeXml,
+  GitPullRequest,
+  House,
+  Monitor,
+  Plug,
+  Settings as Cog,
+  Telescope
+} from 'lucide-react'
 import type { ServerState } from '../App'
 import mark from '../assets/polly-mark.svg'
 
-export const SECTIONS = ['Home', 'Coder', 'Agents', 'Computers', 'Integrations'] as const
+export const SECTIONS = [
+  'Home',
+  'Coder',
+  'Research',
+  'Review',
+  'Agents',
+  'Computers',
+  'Integrations'
+] as const
 export type Section = (typeof SECTIONS)[number] | 'Settings'
 
 const ICONS: Record<Section, React.JSX.Element> = {
   Home: <House />,
   Coder: <CodeXml />,
+  Research: <Telescope />,
+  Review: <GitPullRequest />,
   Agents: <Bot />,
   Computers: <Monitor />,
   Integrations: <Plug />,

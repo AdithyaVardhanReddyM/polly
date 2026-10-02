@@ -68,6 +68,27 @@ def memory_checkpointer():
 
 
 @pytest.fixture
+def configure():
+    """Set fields on the (frozen) settings for one test, and rebuild the tool
+    registry so tools that depend on a key come and go with it."""
+    from polly_server import tools
+    from polly_server.config import settings
+
+    saved: dict[str, object] = {}
+
+    def set_(**fields):
+        for name, value in fields.items():
+            saved.setdefault(name, getattr(settings, name))
+            object.__setattr__(settings, name, value)
+        tools.registry.cache_clear()
+
+    yield set_
+    for name, value in saved.items():
+        object.__setattr__(settings, name, value)
+    tools.registry.cache_clear()
+
+
+@pytest.fixture
 def project(tmp_path):
     from polly_server import projects
 

@@ -21,12 +21,20 @@ if TYPE_CHECKING:
 def registry() -> dict[str, BaseTool]:
     tools: dict[str, BaseTool] = {}
     if settings.tavily_api_key:
+        from polly_server.tools.research import RESEARCH_TOOLS
         from polly_server.tools.web_search import web_search
 
         tools["web_search"] = web_search()
+        tools.update({t.name: t for t in RESEARCH_TOOLS})
     from polly_server.tools.git import GIT_TOOLS
+    from polly_server.tools.github import GITHUB_TOOLS
+    from polly_server.tools.reports import REPORT_TOOLS
 
     tools.update({t.name: t for t in GIT_TOOLS})
+    # GitHub tools work on public repos without a token, so they are always
+    # there; a connected account adds private repos and a higher rate limit.
+    tools.update({t.name: t for t in GITHUB_TOOLS})
+    tools.update({t.name: t for t in REPORT_TOOLS})
     return tools
 
 

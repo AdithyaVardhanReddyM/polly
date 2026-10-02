@@ -27,8 +27,9 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => mainWindow?.show())
 
   // Anything that wants a real browser gets one; nothing navigates the shell away.
+  // Only web links: pages from search results must not open local files or apps.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
 

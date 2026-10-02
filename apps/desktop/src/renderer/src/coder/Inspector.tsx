@@ -10,21 +10,31 @@ import {
   ListChecks,
   RotateCcw,
   Ban,
+  Telescope,
   X
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FileChange, FileDiff, Rule } from '../../../shared/contracts'
 import { api } from '../api'
-import { useCoder } from '../store/coder'
+import { ReportCard } from '../research/Cards'
+import { useChangeResearch } from '../store/agentSession'
+import { type ToolItem, useCoder } from '../store/coder'
 import { DiffView } from './DiffView'
 import { MODES } from './Composer'
+import { ToolCard } from './Transcript'
 import { formatTokens } from './toolMeta'
 
-type Tab = 'changes' | 'plan' | 'session'
+type Tab = 'changes' | 'plan' | 'research' | 'session'
 
 export function Inspector(): React.JSX.Element {
   const changes = useCoder((s) => s.changes)
   const todos = useCoder((s) => s.todos)
+  const sessionId = useCoder((s) => s.sessionId)
+  const researchId = useCoder((s) => s.researchId)
+  const researching = useChangeResearch((s) => s.run === 'running')
+  const findings = useChangeResearch(
+    (s) => s.report?.findings.filter((f) => f.severity !== 'info').length ?? 0
+  )
   const [tab, setTab] = useState<Tab>('changes')
   const open = todos.filter((t) => t.status !== 'completed').length
 
@@ -33,6 +43,20 @@ export function Inspector(): React.JSX.Element {
   useEffect(() => {
     if (hasTodos && changes.length === 0) setTab('plan')
   }, [hasTodos]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Follow this session's change research; show it when a new one starts.
+  const seen = useRef<{ session: string | null; research: string | null }>({
+    session: null,
+    research: null
+  })
+  useEffect(() => {
+    const changeResearch = useChangeResearch.getState()
+    if (researchId) void changeResearch.open(researchId)
+    else changeResearch.newSession()
+    const prev = seen.current
+    if (researchId && prev.session === sessionId && prev.research !== researchId) setTab('research')
+    seen.current = { session: sessionId, research: researchId }
+  }, [researchId, sessionId])
 
   return (
     <aside className="inspector">
@@ -43,6 +67,9 @@ export function Inspector(): React.JSX.Element {
         <TabButton id="plan" tab={tab} onSelect={setTab} count={open}>
           Plan
         </TabButton>
+        <TabButton id="research" tab={tab} onSelect={setTab} count={findings} live={researching}>
+          Research
+        </TabButton>
         <TabButton id="session" tab={tab} onSelect={setTab}>
           Session
         </TabButton>
@@ -50,6 +77,7 @@ export function Inspector(): React.JSX.Element {
       <div className="inspector-body">
         {tab === 'changes' && <ChangesPanel />}
         {tab === 'plan' && <PlanPanel />}
+        {tab === 'research' && <ResearchPanel />}
         {tab === 'session' && <SessionPanel />}
       </div>
     </aside>
@@ -61,12 +89,14 @@ function TabButton({
   tab,
   onSelect,
   count,
+  live = false,
   children
 }: {
   id: Tab
   tab: Tab
   onSelect: (t: Tab) => void
   count?: number
+  live?: boolean
   children: React.ReactNode
 }): React.JSX.Element {
   return (
@@ -77,7 +107,8 @@ function TabButton({
       onClick={() => onSelect(id)}
     >
       {children}
-      {count ? <span className="itab-count">{count}</span> : null}
+      {live ? <span className="session-dot is-running" /> : null}
+      {!live && count ? <span className="itab-count">{count}</span> : null}
     </button>
   )
 }
@@ -264,6 +295,95 @@ function PlanPanel(): React.JSX.Element {
           </li>
         ))}
       </ol>
+    </div>
+  )
+}
+
+// ---------- research ----------
+
+function ResearchPanel(): React.JSX.Element {
+  const sessionId = useCoder((s) => s.sessionId)
+  const changes = useCoder((s) => s.changes)
+  const busy = useCoder((s) => s.run !== 'idle')
+  const project = useCoder((s) => s.projects.find((p) => p.id === s.projectId))
+  const researchNow = useCoder((s) => s.researchNow)
+  const setAutoResearch = useCoder((s) => s.setAutoResearch)
+  const report = useChangeResearch((s) => s.report)
+  const run = useChangeResearch((s) => s.run)
+  const items = useChangeResearch((s) => s.items)
+  const error = useChangeResearch((s) => s.error)
+  const researchId = useCoder((s) => s.researchId)
+  const [searchReady, setSearchReady] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    void api.integrations.status().then((r) => setSearchReady(r.ok ? r.data.tavily.configured : null))
+  }, [])
+
+  const auto = project?.settings.auto_research ?? true
+  const running = run === 'running'
+  const steps = items
+    .flatMap((it): ToolItem[] =>
+      it.kind === 'tool' ? [it] : it.kind === 'subagent' ? it.tools : []
+    )
+    .filter((t) => t.name !== 'write_todos')
+
+  return (
+    <div className="research-panel">
+      <div className="research-controls">
+        <label className="switch-row">
+          <input
+            type="checkbox"
+            className="switch"
+            checked={auto}
+            disabled={!project}
+            onChange={(e) => void setAutoResearch(e.target.checked)}
+          />
+          <span>
+            <b>Research every change</b>
+            <span>When a run edits files, check them against current docs, deprecations and advisories.</span>
+          </span>
+        </label>
+        <button
+          className="btn btn-sm"
+          disabled={!sessionId || busy || running || changes.length === 0 || searchReady === false}
+          title={changes.length === 0 ? 'No changes to research yet' : undefined}
+          onClick={() => void researchNow()}
+        >
+          <Telescope /> Research this change
+        </button>
+        {searchReady === false && (
+          <p className="muted">
+            Needs web search: add <code>TAVILY_API_KEY</code> to <code>.env</code>.
+          </p>
+        )}
+      </div>
+
+      {error && <p className="post-error">{error}</p>}
+
+      {!researchId ? (
+        <div className="inspector-empty">
+          <Telescope />
+          <b>Not researched yet</b>
+          <span>
+            After the Coder finishes, Polly verifies the change against the web and drafts a PR
+            description.
+          </span>
+        </div>
+      ) : report ? (
+        <ReportCard report={report} />
+      ) : (
+        <div className="research-live">
+          <div className="research-status">
+            {running ? <span className="spinner" /> : <Telescope />}
+            {running ? 'Checking docs, deprecations and advisories…' : 'Research ended without a report.'}
+          </div>
+          <div className="research-steps">
+            {steps.slice(-10).map((t) => (
+              <ToolCard key={t.id} tool={t} compact />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

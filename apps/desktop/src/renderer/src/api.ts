@@ -1,9 +1,14 @@
 import type {
   AgentSummary,
+  Artifacts,
   Decision,
+  DevicePoll,
+  DeviceStart,
   FileChange,
   FileContent,
   FileDiff,
+  GitHubStatus,
+  IntegrationsStatus,
   ModelList,
   Project,
   ProjectMemory,
@@ -61,6 +66,9 @@ async function request<T>(
 
 const get = <T>(path: string): Promise<Result<T>> => request<T>('GET', path)
 const post = <T>(path: string, body?: unknown): Promise<Result<T>> => request<T>('POST', path, body)
+/** For calls that wait on GitHub (fetching a PR, posting a comment). */
+const postSlow = <T>(path: string, body?: unknown): Promise<Result<T>> =>
+  request<T>('POST', path, body, 60_000)
 const patch = <T>(path: string, body: unknown): Promise<Result<T>> => request<T>('PATCH', path, body)
 const del = (path: string): Promise<Result<void>> => request<void>('DELETE', path)
 
@@ -107,8 +115,18 @@ export const api = {
   },
 
   sessions: {
-    create: (body: { project_id: string; model?: string; mode?: string; title?: string }) =>
-      post<Session>('/sessions', body),
+    create: (body: {
+      project_id?: string | null
+      agent_id?: string
+      model?: string
+      mode?: string
+      title?: string
+    }) => post<Session>('/sessions', body),
+    /** Top-level sessions with one agent (Coder sessions are listed per project). */
+    list: async (agentId: string): Promise<Result<Session[]>> => {
+      const res = await get<{ sessions: Session[] }>(`/sessions${q({ agent_id: agentId })}`)
+      return res.ok ? { ok: true, data: res.data.sessions } : res
+    },
     get: (id: string) => get<Session>(`/sessions/${id}`),
     update: (id: string, body: { model?: string; mode?: string; title?: string }) =>
       patch<Session>(`/sessions/${id}`, body),
@@ -120,7 +138,31 @@ export const api = {
     accept: (id: string, paths: string[] = []) =>
       post<FileChange[]>(`/sessions/${id}/changes/accept`, { paths }),
     revert: (id: string, paths: string[] = []) =>
-      post<FileChange[]>(`/sessions/${id}/changes/revert`, { paths })
+      post<FileChange[]>(`/sessions/${id}/changes/revert`, { paths }),
+    artifacts: (id: string) => get<Artifacts>(`/sessions/${id}/artifacts`),
+    /** Change research started from a Coder session, newest first. */
+    research: async (id: string): Promise<Result<Session[]>> => {
+      const res = await get<{ sessions: Session[] }>(`/sessions/${id}/research`)
+      return res.ok ? { ok: true, data: res.data.sessions } : res
+    },
+    researchNow: (id: string) => post<Session>(`/sessions/${id}/research`),
+    commentPreview: (id: string) =>
+      get<{ markdown: string }>(`/sessions/${id}/scorecard/preview`),
+    postComment: (id: string) => postSlow<{ url: string }>(`/sessions/${id}/scorecard/post`)
+  },
+
+  reviews: {
+    create: (prUrl: string, model?: string) =>
+      postSlow<Session>('/reviews', { pr_url: prUrl, model })
+  },
+
+  integrations: {
+    status: () => get<IntegrationsStatus>('/integrations'),
+    githubDevice: () => postSlow<DeviceStart>('/integrations/github/device'),
+    githubPoll: (flowId: string) =>
+      postSlow<DevicePoll>(`/integrations/github/device/${encodeURIComponent(flowId)}/poll`),
+    githubToken: (token: string) => postSlow<GitHubStatus>('/integrations/github/token', { token }),
+    githubDisconnect: () => request<GitHubStatus>('DELETE', '/integrations/github')
   }
 }
 

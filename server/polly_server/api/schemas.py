@@ -63,6 +63,7 @@ class Health(BaseModel):
     model: ModelInfo
     sandbox: Provider
     search: Provider
+    github: Provider
 
 
 # ---------- models ----------
@@ -96,6 +97,7 @@ class ProjectPatch(BaseModel):
     default_mode: Mode | None = None
     command_allowlist: list[str] | None = None
     command_denylist: list[str] | None = None
+    auto_research: bool | None = None
 
 
 class ProjectList(BaseModel):
@@ -115,7 +117,9 @@ class ProjectMemory(BaseModel):
 
 
 class SessionCreate(BaseModel):
-    project_id: str
+    # The Coder needs a project; the other agents run without one.
+    project_id: str | None = None
+    agent_id: str = "coder"
     model: str | None = None
     mode: Mode | None = None
     title: str = ""
@@ -165,3 +169,41 @@ class ChangePaths(BaseModel):
     """Files to accept or revert; empty means all of them."""
 
     paths: list[str] = Field(default_factory=list)
+
+
+class Artifacts(BaseModel):
+    """What a run left behind: cited sources, a change report, a scorecard
+    and the facts of the reviewed PR (each null until there is one)."""
+
+    sources: list[dict[str, Any]]
+    report: dict[str, Any] | None
+    scorecard: dict[str, Any] | None
+    pr: dict[str, Any] | None
+
+
+# ---------- integrations ----------
+
+
+class TokenIn(BaseModel):
+    token: str = Field(min_length=1, max_length=400)
+
+
+class Integrations(BaseModel):
+    github: dict[str, Any]
+    tavily: Provider
+
+
+# ---------- reviews ----------
+
+
+class ReviewCreate(BaseModel):
+    pr_url: str = Field(min_length=1, max_length=500)
+    model: str | None = None
+
+
+class CommentPreview(BaseModel):
+    markdown: str
+
+
+class CommentPosted(BaseModel):
+    url: str

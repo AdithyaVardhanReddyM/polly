@@ -50,7 +50,7 @@ class AgentSpec:
     skills: tuple[str, ...] = ()
     # Whether the agent gets its own virtual desktop, not just a code sandbox.
     computer: bool = False
-    model_tier: Literal["default", "fast"] = "default"
+    model_tier: Literal["default", "fast", "strong"] = "default"
     # DiceBear "voxel-bot" options (eyesVariant, topVariant, chestVariant,
     # mouthVariant, bodyColor, glowColor…). The seed defaults to the agent id,
     # so an agent with no overrides still gets a stable, unique robot.

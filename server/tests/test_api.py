@@ -15,7 +15,10 @@ def test_health_reports_providers():
 
 def test_agents_lists_the_catalog():
     agents = client.get("/agents").json()["agents"]
-    assert [a["id"] for a in agents] == [a.id for a in CATALOG]
+    assert [a["id"] for a in agents] == [
+        a.id for a in CATALOG if a.metadata.get("internal") != "true"
+    ]
+    assert "change-research" not in {a["id"] for a in agents}
     assert {a["runtime"] for a in agents} <= {"deep", "agent", "graph"}
 
 

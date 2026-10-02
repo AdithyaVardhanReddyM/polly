@@ -7,7 +7,11 @@ import { Coder } from './pages/Coder'
 import { Computers } from './pages/Computers'
 import { Home } from './pages/Home'
 import { Integrations } from './pages/Integrations'
+import { Research } from './pages/Research'
+import { PR_URL, Review } from './pages/Review'
 import { Settings } from './pages/Settings'
+import { useResearch, useReview } from './store/agentSession'
+import { useCoder } from './store/coder'
 
 export interface ServerState {
   health: ServerHealth | null
@@ -16,6 +20,16 @@ export interface ServerState {
 }
 
 const ALL_SECTIONS: readonly Section[] = [...SECTIONS, 'Settings']
+
+/** Where each runnable agent lives. */
+const HOME_OF: Record<string, Section> = {
+  coder: 'Coder',
+  researcher: 'Research',
+  'deep-research': 'Research',
+  reviewer: 'Review'
+}
+
+const CODING = /\b(fix|implement|refactor|debug|bug|failing tests?|write (a )?tests?|add .+ to (my|the|this))\b/i
 
 /** The open section lives in the URL hash (`#coder/<session>` deep-links a
  *  session), so a reload — or a link — lands on it. */
@@ -51,7 +65,50 @@ export default function App(): React.JSX.Element {
     }
   }, [section])
 
-  const flush = section === 'Coder'
+  const flush = section === 'Coder' || section === 'Research' || section === 'Review'
+
+  /** A task from Home: a PR link goes to the Reviewer, code work to the
+   *  Coder, everything else to research. */
+  const start = async (agentId: string, text: string): Promise<void> => {
+    const pr = text.match(PR_URL)?.[0]
+    const target =
+      agentId !== 'auto' ? agentId : pr ? 'reviewer' : CODING.test(text) ? 'coder' : 'researcher'
+    if (target === 'reviewer') {
+      setSection('Review')
+      if (pr) {
+        useReview.getState().newSession()
+        await useReview.getState().review(pr)
+      }
+      return
+    }
+    if (target === 'coder') {
+      setSection('Coder')
+      const coder = useCoder.getState()
+      if (!coder.projectId) await coder.boot()
+      if (useCoder.getState().projectId) {
+        await useCoder.getState().newSession()
+        await useCoder.getState().send(text)
+      }
+      return
+    }
+    setSection('Research')
+    const research = useResearch.getState()
+    research.newSession()
+    research.setAgent(target)
+    await research.send(text)
+  }
+
+  const openAgent = (id: string): void => {
+    const home = HOME_OF[id]
+    if (!home) return
+    if (id === 'researcher' || id === 'deep-research') {
+      useResearch.getState().newSession()
+      useResearch.getState().setAgent(id)
+    }
+    setSection(home)
+  }
+
+  const searchReady = server.health?.search.configured ?? true
 
   return (
     <div className="app">
@@ -61,13 +118,19 @@ export default function App(): React.JSX.Element {
         {section === 'Home' && (
           <Home
             agents={agents}
+            runnable={Object.keys(HOME_OF)}
             onBrowse={() => setSection('Agents')}
             onCode={() => setSection('Coder')}
+            onStart={(agentId, text) => void start(agentId, text)}
           />
         )}
         {section === 'Coder' && <Coder agent={agents.find((a) => a.id === 'coder')} />}
+        {section === 'Research' && <Research agents={agents} searchReady={searchReady} />}
+        {section === 'Review' && (
+          <Review agents={agents} onConnect={() => setSection('Integrations')} />
+        )}
         {section === 'Agents' && (
-          <Agents agents={agents} server={server} onOpen={(id) => id === 'coder' && setSection('Coder')} />
+          <Agents agents={agents} server={server} openable={Object.keys(HOME_OF)} onOpen={openAgent} />
         )}
         {section === 'Computers' && <Computers agents={agents} server={server} />}
         {section === 'Integrations' && <Integrations />}
