@@ -12,6 +12,7 @@ import { api } from '../api'
 import { isWebUrl } from '../coder/Markdown'
 import { TranscriptView } from '../coder/Transcript'
 import { AgentAvatar } from '../components/AgentAvatar'
+import { Workspace } from '../components/Splitter'
 import { AgentComposer } from '../research/AgentComposer'
 import { AgentRail } from '../research/AgentRail'
 import { ScoreCard } from '../research/Cards'
@@ -48,16 +49,31 @@ export function Review({
   const open = !!sessionId
 
   return (
-    <div className={panel && open ? 'coder' : 'coder is-wide'}>
-      <AgentRail
-        store={useReview}
-        title="Reviews"
-        subtitle="Score a GitHub pull request"
-        icon={<GitPullRequest />}
-        newLabel="New review"
-        empty="No pull requests reviewed yet."
-      />
-
+    <Workspace
+      rail={
+        <AgentRail
+          store={useReview}
+          title="Reviews"
+          subtitle="Score a GitHub pull request"
+          icon={<GitPullRequest />}
+          newLabel="New review"
+          empty="No pull requests reviewed yet."
+        />
+      }
+      panel={
+        panel && open ? (
+          <aside className="inspector">
+            <div className="inspector-tabs">
+              <span className="itab is-active">Pull request</span>
+            </div>
+            <div className="inspector-body">
+              {pr && <PRPanel pr={pr} />}
+              <SourcesPanel sources={sources} running={run === 'running'} />
+            </div>
+          </aside>
+        ) : null
+      }
+    >
       <section className="chat">
         <header className="chat-head">
           {agent && <AgentAvatar agent={agent} size={24} active={run === 'running'} />}
@@ -97,6 +113,7 @@ export function Review({
         ) : (
           <>
             <TranscriptView
+              agent={agent}
               items={items}
               run={run}
               sources={sources}
@@ -110,19 +127,7 @@ export function Review({
           </>
         )}
       </section>
-
-      {panel && open && (
-        <aside className="inspector">
-          <div className="inspector-tabs">
-            <span className="itab is-active">Pull request</span>
-          </div>
-          <div className="inspector-body">
-            {pr && <PRPanel pr={pr} />}
-            <SourcesPanel sources={sources} running={run === 'running'} />
-          </div>
-        </aside>
-      )}
-    </div>
+    </Workspace>
   )
 }
 

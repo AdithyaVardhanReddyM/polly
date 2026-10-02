@@ -24,8 +24,15 @@ export function AgentComposer({
   useEffect(() => {
     const el = area.current
     if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+    const fit = (): void => {
+      el.style.height = 'auto'
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+    }
+    fit()
+    // Re-fit when the column changes width (a pane dragged, the window resized).
+    const obs = new ResizeObserver(fit)
+    obs.observe(el.parentElement ?? el)
+    return () => obs.disconnect()
   }, [draft])
 
   const submit = (): void => {

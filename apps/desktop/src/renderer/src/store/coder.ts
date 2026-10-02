@@ -56,6 +56,9 @@ export type TranscriptItem =
 
 export type RunState = 'idle' | 'running' | 'awaiting_approval'
 
+/** What the right-hand panel shows: a fixed view or an open file. */
+export type PanelTab = 'changes' | 'plan' | 'research' | 'session' | `file:${string}`
+
 export interface UsageSnapshot {
   session: UsageTotals
   contextTokens: number
@@ -83,6 +86,11 @@ interface CoderState {
   /** The latest change research for this session (a child session). */
   researchId: string | null
 
+  /** The right-hand panel: whether it shows, which tab, and the files open in it. */
+  panelOpen: boolean
+  panelTab: PanelTab
+  openFiles: string[]
+
   // actions
   boot: () => Promise<void>
   openFolder: (path: string) => Promise<boolean>
@@ -103,6 +111,11 @@ interface CoderState {
   researchNow: () => Promise<void>
   setAutoResearch: (on: boolean) => Promise<void>
   clearError: () => void
+  setPanelOpen: (open: boolean) => void
+  setPanelTab: (tab: PanelTab) => void
+  /** Open a project file (relative path) in the panel, beside the chat. */
+  openFile: (path: string) => void
+  closeFile: (path: string) => void
 }
 
 let controller: AbortController | null = null
@@ -485,6 +498,10 @@ export const useCoder = create<CoderState>((set, get) => {
     error: null,
     lastSeq: -1,
     researchId: null,
+    // Collapsed until asked for: the chat gets the room. Opening a file opens it.
+    panelOpen: false,
+    panelTab: 'changes',
+    openFiles: [],
 
     async boot() {
       const [models, projects] = await Promise.all([api.models(), api.projects.list()])
@@ -524,7 +541,13 @@ export const useCoder = create<CoderState>((set, get) => {
       if (get().projectId === id) return
       controller?.abort()
       remember(LAST_PROJECT, id)
-      set({ projectId: id, sessions: [], ...resetSession() })
+      set({
+        projectId: id,
+        sessions: [],
+        openFiles: [],
+        panelTab: get().panelTab.startsWith('file:') ? 'changes' : get().panelTab,
+        ...resetSession()
+      })
       sessionHash(null)
       await refreshSessions()
     },
@@ -753,6 +776,39 @@ export const useCoder = create<CoderState>((set, get) => {
 
     clearError() {
       set({ error: null })
+    },
+
+    setPanelOpen(open) {
+      set({ panelOpen: open })
+    },
+
+    setPanelTab(tab) {
+      set({ panelTab: tab, panelOpen: true })
+    },
+
+    openFile(path) {
+      const clean = path.replace(/^\/+/, '')
+      if (!clean) return
+      const open = get().openFiles
+      set({
+        openFiles: open.includes(clean) ? open : [...open, clean],
+        panelTab: `file:${clean}`,
+        panelOpen: true
+      })
+    },
+
+    closeFile(path) {
+      const open = get().openFiles
+      const i = open.indexOf(path)
+      if (i < 0) return
+      const rest = open.filter((p) => p !== path)
+      let tab = get().panelTab
+      if (tab === `file:${path}`) {
+        // Land on the neighbouring file, or back on Changes.
+        const next = rest[Math.min(i, rest.length - 1)]
+        tab = next ? `file:${next}` : 'changes'
+      }
+      set({ openFiles: rest, panelTab: tab })
     }
   }
 })

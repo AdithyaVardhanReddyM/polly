@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import type { AgentSummary } from '../../../shared/contracts'
 import { TranscriptView } from '../coder/Transcript'
 import { AgentAvatar } from '../components/AgentAvatar'
+import { Workspace } from '../components/Splitter'
 import { AgentComposer } from '../research/AgentComposer'
 import { AgentRail } from '../research/AgentRail'
 import { SourcesPanel } from '../research/Sources'
@@ -61,16 +62,30 @@ export function Research({
   const empty = items.length === 0 && !session
 
   return (
-    <div className={panel ? 'coder' : 'coder is-wide'}>
-      <AgentRail
-        store={useResearch}
-        title="Research"
-        subtitle="Cited answers from the live web"
-        icon={<Telescope />}
-        newLabel="New research"
-        empty="Nothing researched yet."
-      />
-
+    <Workspace
+      rail={
+        <AgentRail
+          store={useResearch}
+          title="Research"
+          subtitle="Cited answers from the live web"
+          icon={<Telescope />}
+          newLabel="New research"
+          empty="Nothing researched yet."
+        />
+      }
+      panel={
+        panel ? (
+          <aside className="inspector">
+            <div className="inspector-tabs">
+              <span className="itab is-active">Sources</span>
+            </div>
+            <div className="inspector-body">
+              <SourcesPanel sources={sources} running={run === 'running'} />
+            </div>
+          </aside>
+        ) : null
+      }
+    >
       <section className="chat">
         <header className="chat-head">
           {agent && <AgentAvatar agent={agent} size={24} active={run === 'running'} />}
@@ -110,7 +125,7 @@ export function Research({
         {empty ? (
           <ResearchStart disabled={!searchReady} />
         ) : (
-          <TranscriptView items={items} run={run} sources={sources} />
+          <TranscriptView items={items} run={run} sources={sources} agent={agent} />
         )}
 
         <AgentComposer
@@ -121,18 +136,7 @@ export function Research({
           {!session && <DepthSwitch />}
         </AgentComposer>
       </section>
-
-      {panel && (
-        <aside className="inspector">
-          <div className="inspector-tabs">
-            <span className="itab is-active">Sources</span>
-          </div>
-          <div className="inspector-body">
-            <SourcesPanel sources={sources} running={run === 'running'} />
-          </div>
-        </aside>
-      )}
-    </div>
+    </Workspace>
   )
 }
 

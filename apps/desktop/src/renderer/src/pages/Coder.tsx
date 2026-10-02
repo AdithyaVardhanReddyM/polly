@@ -1,27 +1,27 @@
 import {
+  ChevronDown,
   CircleAlert,
+  Folder,
   FolderOpen,
+  GitBranch,
+  Laptop,
   PanelRightClose,
   PanelRightOpen,
   ShieldCheck,
   SquareTerminal,
   X
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import type { AgentSummary } from '../../../shared/contracts'
-import { Composer } from '../coder/Composer'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { AgentSummary, Project } from '../../../shared/contracts'
+import { Composer, Popover } from '../coder/Composer'
 import { Inspector } from '../coder/Inspector'
-import { ProjectRail } from '../coder/ProjectRail'
+import { ProjectMenu, ProjectRail, shortPath } from '../coder/ProjectRail'
 import { Transcript } from '../coder/Transcript'
 import { AgentAvatar } from '../components/AgentAvatar'
+import { Workspace } from '../components/Splitter'
 import { useCoder } from '../store/coder'
 
-const STARTERS = [
-  'Explain how this project is structured and where the entry points are',
-  'Find and fix the failing tests',
-  'Add input validation to the main API handlers',
-  'Review the code for bugs and propose fixes'
-]
+const reducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 export function Coder({ agent }: { agent: AgentSummary | undefined }): React.JSX.Element {
   const boot = useCoder((s) => s.boot)
@@ -33,7 +33,8 @@ export function Coder({ agent }: { agent: AgentSummary | undefined }): React.JSX
   const run = useCoder((s) => s.run)
   const error = useCoder((s) => s.error)
   const clearError = useCoder((s) => s.clearError)
-  const [inspector, setInspector] = useState(true)
+  const inspector = useCoder((s) => s.panelOpen)
+  const setInspector = useCoder((s) => s.setPanelOpen)
   const [askPath, setAskPath] = useState(false)
 
   useEffect(() => {
@@ -50,18 +51,53 @@ export function Coder({ agent }: { agent: AgentSummary | undefined }): React.JSX
   }
 
   const project = projects.find((p) => p.id === projectId)
-  const empty = items.length === 0
+  // A new session: the prompt sits centre stage until the first message.
+  const hero = !!project && items.length === 0
+
+  // When the first message goes out, the box glides from the centre to its
+  // place at the bottom: note where it was, then animate from there (FLIP).
+  const stage = useRef<HTMLDivElement>(null)
+  const from = useRef<DOMRect | null>(null)
+  const capture = (): void => {
+    from.current = stage.current?.querySelector('.composer-box')?.getBoundingClientRect() ?? null
+  }
+  useLayoutEffect(() => {
+    const start = from.current
+    if (hero || !start) return
+    from.current = null
+    const box = stage.current?.querySelector<HTMLElement>('.composer-box')
+    if (!box || reducedMotion()) return
+    const end = box.getBoundingClientRect()
+    const dx = start.left - end.left
+    const dy = start.top - end.top
+    if (Math.abs(dy) < 2) return
+    box.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], {
+      duration: 560,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+    })
+  }, [hero])
 
   return (
-    <div className={inspector ? 'coder' : 'coder is-wide'}>
-      <ProjectRail onOpenFolder={() => void pickFolder()} />
-
-      <section className="chat">
+    <Workspace
+      rail={<ProjectRail onOpenFolder={() => void pickFolder()} />}
+      panel={inspector ? <Inspector /> : null}
+    >
+      <section className={hero ? 'chat is-empty' : 'chat'}>
         <header className="chat-head">
-          {agent && <AgentAvatar agent={agent} size={24} active={run === 'running'} />}
+          {agent && <AgentAvatar agent={agent} size={22} active={run === 'running'} />}
           <div className="chat-title">
             <b>{session?.title || (project ? 'New session' : 'Coder')}</b>
-            {project && <span>{project.name}</span>}
+            {project && (
+              <span>
+                {project.name}
+                {project.branch && (
+                  <>
+                    <GitBranch />
+                    {project.branch}
+                  </>
+                )}
+              </span>
+            )}
           </div>
           <span className={`run-state is-${run}`}>
             {run === 'running' ? 'Working' : run === 'awaiting_approval' ? 'Needs approval' : ''}
@@ -85,18 +121,32 @@ export function Coder({ agent }: { agent: AgentSummary | undefined }): React.JSX
           </div>
         )}
 
-        {!project ? (
-          <Welcome onOpen={() => void pickFolder()} />
-        ) : empty ? (
-          <Starters />
-        ) : (
-          <Transcript />
+        {!project ? <Welcome onOpen={() => void pickFolder()} /> : !hero && <Transcript agent={agent} />}
+
+        {project && (
+          <div className="composer-stage" ref={stage}>
+            {hero && (
+              <div className="hero">
+                {agent && (
+                  <div className="hero-bot" aria-hidden>
+                    <AgentAvatar agent={agent} size={104} bare motion="medium" />
+                    <span className="hero-bot-shadow" />
+                  </div>
+                )}
+                <h2>
+                  What should we build in <em>{project.name}</em>?
+                </h2>
+              </div>
+            )}
+            <Composer
+              placeholder={hero ? 'Describe a change, a bug, or a question about the code' : undefined}
+              onBeforeSend={hero ? capture : undefined}
+              above={hero ? <Where project={project} onOpenFolder={() => void pickFolder()} /> : undefined}
+              below={hero ? <Checkout project={project} /> : undefined}
+            />
+          </div>
         )}
-
-        <Composer />
       </section>
-
-      {inspector && <Inspector />}
 
       {askPath && (
         <PathDialog
@@ -106,7 +156,7 @@ export function Coder({ agent }: { agent: AgentSummary | undefined }): React.JSX
           }}
         />
       )}
-    </div>
+    </Workspace>
   )
 }
 
@@ -136,22 +186,56 @@ function Welcome({ onOpen }: { onOpen: () => void }): React.JSX.Element {
   )
 }
 
-function Starters(): React.JSX.Element {
-  const send = useCoder((s) => s.send)
-  const run = useCoder((s) => s.run)
+/** Where the session will run: this machine, and which project. */
+function Where({ project, onOpenFolder }: { project: Project; onOpenFolder: () => void }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
   return (
-    <div className="coder-starters">
-      <h2>
-        What should we <em>build?</em>
-      </h2>
-      <div className="starter-grid">
-        {STARTERS.map((s) => (
-          <button key={s} className="starter" disabled={run !== 'idle'} onClick={() => void send(s)}>
-            {s}
+    <>
+      <span className="ctx-chip is-static" title="Runs on this machine">
+        <Laptop />
+        <span>{project.host || 'This computer'}</span>
+      </span>
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        placement="bottom"
+        align="end"
+        trigger={
+          <button className="ctx-chip" title={project.path} onClick={() => setOpen(!open)}>
+            <Folder />
+            <span>{project.name}</span>
+            <ChevronDown className="chip-chev" />
           </button>
-        ))}
-      </div>
-    </div>
+        }
+      >
+        <ProjectMenu onClose={() => setOpen(false)} onOpenFolder={onOpenFolder} />
+      </Popover>
+    </>
+  )
+}
+
+/** "…/code/asset-flow": enough of a path to recognise it. */
+function tailPath(path: string): string {
+  const short = shortPath(path)
+  const parts = short.split('/').filter(Boolean)
+  return parts.length > 3 ? `…/${parts.slice(-2).join('/')}` : short
+}
+
+/** The working copy the Coder will change. */
+function Checkout({ project }: { project: Project }): React.JSX.Element {
+  return (
+    <>
+      <span className="ctx-chip is-static" title={shortPath(project.path)}>
+        <FolderOpen />
+        <span>{tailPath(project.path)}</span>
+      </span>
+      {project.branch && (
+        <span className="ctx-chip is-static" title="Current branch">
+          <GitBranch />
+          <span>{project.branch}</span>
+        </span>
+      )}
+    </>
   )
 }
 

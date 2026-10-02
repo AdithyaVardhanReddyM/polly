@@ -8,6 +8,9 @@ import { initTheme } from './theme'
 
 initTheme()
 
+// The Mac app draws its window buttons over the page; layouts make room for them.
+if (window.polly && /Mac/i.test(navigator.userAgent)) document.documentElement.dataset.chrome = 'mac'
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <App />

@@ -1,4 +1,4 @@
-import { Check, FilePen, ShieldAlert, SquareTerminal, Trash2, X } from 'lucide-react'
+import { FilePen, ShieldAlert, SquareTerminal, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ApprovalRequest,
@@ -38,9 +38,9 @@ const ICON = {
 }
 
 const TITLE = {
-  edit: 'Edit a file',
-  delete: 'Delete a file',
-  command: 'Run a command',
+  edit: 'Edit',
+  delete: 'Delete',
+  command: 'Run command',
   other: 'Use a tool'
 }
 
@@ -87,23 +87,18 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequired }): Reac
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  const options = requests.length === 1 ? scopes(requests[0]) : []
+  const only = requests[0]
+
   return (
-    <div className="approval">
-      <div className="approval-head">
-        <ShieldAlert />
-        <b>{requests.length > 1 ? `${requests.length} actions need your approval` : 'Coder needs your approval'}</b>
-      </div>
+    <div className="approval" role="group" aria-label="Approval needed">
       {requests.map((r) => (
-        <RequestView
-          key={r.index}
-          request={r}
-          scope={scope[r.index] ?? scopes(r)[0].pattern}
-          onScope={(p) => setScope({ ...scope, [r.index]: p })}
-        />
+        <RequestView key={r.index} request={r} />
       ))}
       {rejecting ? (
-        <div className="approval-reject">
+        <div className="approval-foot">
           <input
+            className="approval-reason"
             autoFocus
             placeholder="Tell the Coder what to do instead (optional)"
             value={reason}
@@ -117,25 +112,42 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequired }): Reac
             Back
           </button>
           <button className="btn btn-danger" onClick={() => submit('reject')} disabled={busy}>
-            <X /> Reject
+            Reject
           </button>
         </div>
       ) : (
-        <div className="approval-actions">
+        <div className="approval-foot">
           <button
             ref={approveRef}
             className="btn btn-primary"
             onClick={() => submit('approve')}
             disabled={busy}
           >
-            <Check /> {requests.length > 1 ? 'Approve all' : 'Approve'}
+            {requests.length > 1 ? 'Approve all' : 'Approve'}
             <kbd>Y</kbd>
           </button>
           <button className="btn" onClick={() => submit('approve', true)} disabled={busy}>
             Always allow
           </button>
+          {options.length > 1 && (
+            <select
+              className="approval-scope"
+              aria-label="What “Always allow” covers"
+              title="What “Always allow” covers"
+              value={scope[only.index] ?? options[0].pattern}
+              onChange={(e) => setScope({ ...scope, [only.index]: e.target.value })}
+            >
+              {options.map((o) => (
+                <option key={o.label} value={o.pattern}>
+                  for {o.label}
+                </option>
+              ))}
+            </select>
+          )}
+          <span className="approval-spacer" />
           <button className="btn btn-ghost" onClick={() => setRejecting(true)} disabled={busy}>
-            Reject <kbd>N</kbd>
+            Reject
+            <kbd>N</kbd>
           </button>
         </div>
       )}
@@ -143,15 +155,7 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequired }): Reac
   )
 }
 
-function RequestView({
-  request,
-  scope,
-  onScope
-}: {
-  request: ApprovalRequest
-  scope: string
-  onScope: (pattern: string) => void
-}): React.JSX.Element {
+function RequestView({ request }: { request: ApprovalRequest }): React.JSX.Element {
   const projectId = useCoder((s) => s.projectId)
   const path = String(request.args.file_path ?? '')
   const [current, setCurrent] = useState<string | null>(null)
@@ -183,36 +187,34 @@ function RequestView({
     return null
   }, [request, current])
 
-  const options = scopes(request)
+  const shown = path.replace(/^\//, '')
   return (
     <div className="approval-item">
-      <div className="approval-title">
+      <div className="approval-head">
         <span className={`approval-kind is-${request.kind}`}>{ICON[request.kind]}</span>
-        <span>{TITLE[request.kind]}</span>
-        {path && <code>{path.replace(/^\//, '')}</code>}
+        <b>{TITLE[request.kind]}</b>
+        {shown && <code title={shown}>{shown}</code>}
+        <span className="approval-state">Waiting for approval</span>
       </div>
       {request.kind === 'command' && (
         <pre className="approval-command">
-          $ {String(request.args.command ?? request.args.message ?? request.description)}
+          <span>$ </span>
+          {String(request.args.command ?? request.args.message ?? request.description)}
         </pre>
       )}
       {diff && (
         <div className="approval-diff">
-          <DiffView before={diff.before} after={diff.after} context={3} maxLines={300} />
+          <DiffView
+            before={diff.before}
+            after={diff.after}
+            context={3}
+            maxLines={300}
+            path={shown || undefined}
+          />
         </div>
       )}
-      {request.kind === 'delete' && <p className="approval-note">The file will be removed from the project.</p>}
-      {options.length > 1 && (
-        <label className="approval-scope">
-          <span>“Always allow” covers</span>
-          <select value={scope} onChange={(e) => onScope(e.target.value)}>
-            {options.map((o) => (
-              <option key={o.label} value={o.pattern}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      {request.kind === 'delete' && (
+        <p className="approval-note">The file will be removed from the project.</p>
       )}
     </div>
   )

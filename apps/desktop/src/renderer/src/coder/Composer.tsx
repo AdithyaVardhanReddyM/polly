@@ -1,7 +1,9 @@
-import { ArrowUp, ChevronDown, Cpu, Hand, Map as MapIcon, ShieldCheck, Square, Zap } from 'lucide-react'
+import { ArrowUp, Check, ChevronDown, Hand, Map as MapIcon, ShieldCheck, Square, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { PermissionMode } from '../../../shared/contracts'
 import { useCoder } from '../store/coder'
+import { describeModel } from '../store/models'
+import { ModelLogo, NebiusLogo } from './icons'
 import { formatTokens } from './toolMeta'
 
 export const MODES: {
@@ -33,7 +35,20 @@ export const MODES: {
 
 const AUTONOMOUS_OK = 'polly.coder.autonomous-ok'
 
-export function Composer(): React.JSX.Element {
+export function Composer({
+  above,
+  below,
+  onBeforeSend,
+  placeholder
+}: {
+  /** Shown over the box's top edge (the new-session screen's pickers). */
+  above?: React.ReactNode
+  /** Shown under the box. */
+  below?: React.ReactNode
+  /** Called just before a message goes out, while the box is still in place. */
+  onBeforeSend?: () => void
+  placeholder?: string
+} = {}): React.JSX.Element {
   const run = useCoder((s) => s.run)
   const send = useCoder((s) => s.send)
   const cancel = useCoder((s) => s.cancel)
@@ -48,8 +63,15 @@ export function Composer(): React.JSX.Element {
   useEffect(() => {
     const el = area.current
     if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`
+    const fit = (): void => {
+      el.style.height = 'auto'
+      el.style.height = `${Math.min(el.scrollHeight, 240)}px`
+    }
+    fit()
+    // Re-fit when the column changes width (a pane dragged, the window resized).
+    const obs = new ResizeObserver(fit)
+    obs.observe(el.parentElement ?? el)
+    return () => obs.disconnect()
   }, [draft])
 
   useEffect(() => {
@@ -59,12 +81,14 @@ export function Composer(): React.JSX.Element {
   const submit = (): void => {
     if (disabled || !draft.trim()) return
     const text = draft
+    onBeforeSend?.()
     setDraft('')
     void send(text)
   }
 
   return (
     <div className="coder-composer">
+      {above && <div className="composer-above">{above}</div>}
       <div className={`composer-box${busy ? ' is-busy' : ''}`}>
         <textarea
           ref={area}
@@ -77,7 +101,7 @@ export function Composer(): React.JSX.Element {
                 ? 'Waiting for your decision above…'
                 : run === 'running'
                   ? 'Coder is working…'
-                  : 'Ask Coder to build, fix or explain something…'
+                  : (placeholder ?? 'Ask Coder to build, fix or explain something')
           }
           disabled={!projectId}
           onChange={(e) => setDraft(e.target.value)}
@@ -109,6 +133,7 @@ export function Composer(): React.JSX.Element {
           )}
         </div>
       </div>
+      {below && <div className="composer-below">{below}</div>}
     </div>
   )
 }
@@ -177,16 +202,16 @@ function ModeSwitcher(): React.JSX.Element {
         <button
           className={`chip mode-chip is-${mode}`}
           disabled={locked}
-          title={`${current.blurb} (Shift+Tab to switch)`}
+          title={`${current.blurb} (⇧Tab to switch)`}
           onClick={() => setOpen(!open)}
         >
           {current.icon}
-          {current.label}
+          <span>{current.label}</span>
           <ChevronDown className="chip-chev" />
         </button>
       }
     >
-      <div className="menu">
+      <div className="menu menu-modes">
         <div className="menu-label">Permissions</div>
         {MODES.map((m) => (
           <button
@@ -199,8 +224,12 @@ function ModeSwitcher(): React.JSX.Element {
               <b>{m.label}</b>
               <span>{m.blurb}</span>
             </span>
+            {m.id === mode && <Check className="menu-check" />}
           </button>
         ))}
+        <div className="menu-foot">
+          <kbd className="keycap">⇧ Tab</kbd> cycles modes
+        </div>
       </div>
     </Popover>
   )
@@ -212,7 +241,7 @@ function ModelPicker(): React.JSX.Element {
   const setModel = useCoder((s) => s.setModel)
   const run = useCoder((s) => s.run)
   const [open, setOpen] = useState(false)
-  const current = models.find((m) => m.id === model)
+  const current = describeModel(model, models)
   const vendors = [...new Set(models.map((m) => m.vendor))]
 
   return (
@@ -221,20 +250,23 @@ function ModelPicker(): React.JSX.Element {
       onOpenChange={setOpen}
       trigger={
         <button
-          className="chip"
+          className="chip model-chip"
           disabled={run !== 'idle'}
           title={model}
           onClick={() => setOpen(!open)}
         >
-          <Cpu className="chip-dot" />
-          {current?.label ?? (model.split('/')[1] || 'Model')}
+          <ModelLogo vendor={current.vendor} model={model} size={15} />
+          <span>{model ? current.label : 'Model'}</span>
           <ChevronDown className="chip-chev" />
         </button>
       }
     >
       <div className="menu menu-models">
+        <div className="menu-head">
+          <NebiusLogo /> Served by Nebius Token Factory
+        </div>
         {vendors.map((v) => (
-          <div key={v}>
+          <div key={v} className="menu-group">
             <div className="menu-label">{v}</div>
             {models
               .filter((m) => m.vendor === v)
@@ -247,21 +279,24 @@ function ModelPicker(): React.JSX.Element {
                     void setModel(m.id)
                   }}
                 >
+                  <span className="menu-logo">
+                    <ModelLogo vendor={m.vendor} model={m.id} size={18} />
+                  </span>
                   <span className="menu-text">
                     <b>
                       {m.label}
-                      {m.is_default && <em className="badge">default</em>}
+                      {m.is_default && <em className="badge">Default</em>}
                     </b>
                     <span>
                       {formatTokens(m.context_window)} context
-                      {m.reasoning ? ' · reasoning' : ''}
+                      {m.reasoning ? ' · Reasoning' : ''}
                     </span>
                   </span>
+                  {m.id === model && <Check className="menu-check" />}
                 </button>
               ))}
           </div>
         ))}
-        <div className="menu-foot">Served by Nebius Token Factory</div>
       </div>
     </Popover>
   )
@@ -271,22 +306,22 @@ function ContextMeter(): React.JSX.Element | null {
   const usage = useCoder((s) => s.usage)
   if (!usage.contextWindow || usage.contextTokens === 0) return null
   const pct = Math.min(100, (usage.contextTokens / usage.contextWindow) * 100)
-  const r = 7
+  const r = 6
   const c = 2 * Math.PI * r
   return (
     <span
       className={`context-meter${pct > 80 ? ' is-high' : ''}`}
       title={`Context: ${formatTokens(usage.contextTokens)} of ${formatTokens(usage.contextWindow)} tokens (${pct.toFixed(0)}%). Older turns are summarised at 85%.`}
     >
-      <svg viewBox="0 0 18 18" width="18" height="18" aria-hidden>
-        <circle cx="9" cy="9" r={r} className="ring-bg" />
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+        <circle cx="8" cy="8" r={r} className="ring-bg" />
         <circle
-          cx="9"
-          cy="9"
+          cx="8"
+          cy="8"
           r={r}
           className="ring"
           strokeDasharray={`${(pct / 100) * c} ${c}`}
-          transform="rotate(-90 9 9)"
+          transform="rotate(-90 8 8)"
         />
       </svg>
       {pct < 1 ? '<1' : pct.toFixed(0)}%

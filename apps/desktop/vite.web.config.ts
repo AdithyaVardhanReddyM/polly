@@ -7,5 +7,8 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   root: resolve(__dirname, 'src/renderer'),
   plugins: [react()],
+  build: {
+    assetsInlineLimit: (file) => (file.includes('material-icon-theme') ? false : undefined)
+  },
   server: { port: 5173, strictPort: true }
 })

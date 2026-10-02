@@ -128,3 +128,13 @@ export function relativeTime(epochSeconds: number): string {
   if (diff < 7 * 86_400) return `${Math.floor(diff / 86_400)}d ago`
   return new Date(epochSeconds * 1000).toLocaleDateString()
 }
+
+/** Compact age for lists: "now", "12m", "6h", "3d", then a date. */
+export function shortTime(epochSeconds: number): string {
+  const diff = Date.now() / 1000 - epochSeconds
+  if (diff < 60) return 'now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`
+  if (diff < 86_400) return `${Math.floor(diff / 3600)}h`
+  if (diff < 7 * 86_400) return `${Math.floor(diff / 86_400)}d`
+  return new Date(epochSeconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}

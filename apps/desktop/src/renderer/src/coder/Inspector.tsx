@@ -4,9 +4,8 @@ import {
   Circle,
   CircleCheck,
   CircleDot,
-  FileMinus,
   FilePen,
-  FilePlus,
+  FileText,
   ListChecks,
   RotateCcw,
   Ban,
@@ -18,30 +17,37 @@ import type { FileChange, FileDiff, Rule } from '../../../shared/contracts'
 import { api } from '../api'
 import { ReportCard } from '../research/Cards'
 import { useChangeResearch } from '../store/agentSession'
-import { type ToolItem, useCoder } from '../store/coder'
+import { type PanelTab, type ToolItem, useCoder } from '../store/coder'
 import { DiffView } from './DiffView'
+import { FileViewer } from './FileViewer'
+import { FileIcon } from './icons'
 import { MODES } from './Composer'
 import { ToolCard } from './Transcript'
 import { formatTokens } from './toolMeta'
 
-type Tab = 'changes' | 'plan' | 'research' | 'session'
+type Tab = Exclude<PanelTab, `file:${string}`>
 
 export function Inspector(): React.JSX.Element {
   const changes = useCoder((s) => s.changes)
   const todos = useCoder((s) => s.todos)
   const sessionId = useCoder((s) => s.sessionId)
   const researchId = useCoder((s) => s.researchId)
+  const tab = useCoder((s) => s.panelTab)
+  const setTab = useCoder((s) => s.setPanelTab)
+  const openFiles = useCoder((s) => s.openFiles)
+  const closeFile = useCoder((s) => s.closeFile)
   const researching = useChangeResearch((s) => s.run === 'running')
   const findings = useChangeResearch(
     (s) => s.report?.findings.filter((f) => f.severity !== 'info').length ?? 0
   )
-  const [tab, setTab] = useState<Tab>('changes')
   const open = todos.filter((t) => t.status !== 'completed').length
+  const tabs = useRef<HTMLDivElement>(null)
 
   // Jump to the plan the first time one appears in a session.
   const hasTodos = todos.length > 0
   useEffect(() => {
-    if (hasTodos && changes.length === 0) setTab('plan')
+    if (hasTodos && changes.length === 0 && !useCoder.getState().panelTab.startsWith('file:'))
+      setTab('plan')
   }, [hasTodos]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Follow this session's change research; show it when a new one starts.
@@ -56,7 +62,14 @@ export function Inspector(): React.JSX.Element {
     const prev = seen.current
     if (researchId && prev.session === sessionId && prev.research !== researchId) setTab('research')
     seen.current = { session: sessionId, research: researchId }
-  }, [researchId, sessionId])
+  }, [researchId, sessionId, setTab])
+
+  // Keep the active file tab in view.
+  useEffect(() => {
+    tabs.current?.querySelector('.is-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [tab])
+
+  const file = tab.startsWith('file:') ? tab.slice(5) : null
 
   return (
     <aside className="inspector">
@@ -74,11 +87,52 @@ export function Inspector(): React.JSX.Element {
           Session
         </TabButton>
       </div>
-      <div className="inspector-body">
-        {tab === 'changes' && <ChangesPanel />}
-        {tab === 'plan' && <PlanPanel />}
-        {tab === 'research' && <ResearchPanel />}
-        {tab === 'session' && <SessionPanel />}
+      {openFiles.length > 0 && (
+        <div className="file-tabs" role="tablist" aria-label="Open files" ref={tabs}>
+          {openFiles.map((path) => {
+            const name = path.split('/').pop() ?? path
+            const active = tab === `file:${path}`
+            return (
+              <div
+                key={path}
+                role="tab"
+                aria-selected={active}
+                className={active ? 'ftab is-active' : 'ftab'}
+                title={path}
+                onClick={() => setTab(`file:${path}`)}
+                onAuxClick={(e) => {
+                  if (e.button === 1) closeFile(path)
+                }}
+              >
+                <FileIcon name={name} />
+                <span>{name}</span>
+                <button
+                  className="ftab-close"
+                  title="Close"
+                  aria-label={`Close ${name}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeFile(path)
+                  }}
+                >
+                  <X />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <div className={file ? 'inspector-body is-file' : 'inspector-body'}>
+        {file ? (
+          <FileViewer key={file} path={file} />
+        ) : (
+          <>
+            {tab === 'changes' && <ChangesPanel />}
+            {tab === 'plan' && <PlanPanel />}
+            {tab === 'research' && <ResearchPanel />}
+            {tab === 'session' && <SessionPanel />}
+          </>
+        )}
       </div>
     </aside>
   )
@@ -93,7 +147,7 @@ function TabButton({
   children
 }: {
   id: Tab
-  tab: Tab
+  tab: PanelTab
   onSelect: (t: Tab) => void
   count?: number
   live?: boolean
@@ -107,7 +161,7 @@ function TabButton({
       onClick={() => onSelect(id)}
     >
       {children}
-      {live ? <span className="session-dot is-running" /> : null}
+      {live ? <span className="spinner is-small" /> : null}
       {!live && count ? <span className="itab-count">{count}</span> : null}
     </button>
   )
@@ -115,11 +169,7 @@ function TabButton({
 
 // ---------- changes ----------
 
-const KIND_ICON = {
-  created: <FilePlus />,
-  modified: <FilePen />,
-  deleted: <FileMinus />
-}
+const KIND_LETTER = { created: 'A', modified: 'M', deleted: 'D' }
 
 function ChangesPanel(): React.JSX.Element {
   const changes = useCoder((s) => s.changes)
@@ -200,6 +250,7 @@ function ChangeRow({
   onRevert: () => void
 }): React.JSX.Element {
   const sessionId = useCoder((s) => s.sessionId)
+  const openFile = useCoder((s) => s.openFile)
   const [diff, setDiff] = useState<FileDiff | null>(null)
   const name = change.path.split('/').pop() ?? change.path
   const dir = change.path.slice(0, change.path.length - name.length)
@@ -220,7 +271,7 @@ function ChangeRow({
       <div className="change-row">
         <button className="change-main" onClick={onToggle}>
           <ChevronRight className={open ? 'chev is-open' : 'chev'} />
-          <span className={`change-kind is-${change.kind}`}>{KIND_ICON[change.kind]}</span>
+          <FileIcon name={name} />
           <span className="change-path" title={change.path}>
             <b>{name}</b>
             {dir && <span>{dir}</span>}
@@ -229,8 +280,16 @@ function ChangeRow({
             {change.additions > 0 && <span className="adds">+{change.additions}</span>}
             {change.deletions > 0 && <span className="dels">−{change.deletions}</span>}
           </span>
+          <span className={`change-kind is-${change.kind}`} title={change.kind}>
+            {KIND_LETTER[change.kind]}
+          </span>
         </button>
         <span className="change-btns">
+          {change.kind !== 'deleted' && (
+            <button className="icon-btn" title="Open file" onClick={() => openFile(change.path)}>
+              <FileText />
+            </button>
+          )}
           <button className="icon-btn" title="Undo this change" disabled={busy} onClick={onRevert}>
             <RotateCcw />
           </button>
@@ -246,7 +305,7 @@ function ChangeRow({
           ) : diff.binary ? (
             <div className="diff-empty">Binary or very large file.</div>
           ) : (
-            <DiffView before={diff.before} after={diff.after} />
+            <DiffView before={diff.before} after={diff.after} path={change.path} />
           )}
           {change.source === 'shell' && (
             <div className="change-note">Changed by a command; compared with the last commit.</div>

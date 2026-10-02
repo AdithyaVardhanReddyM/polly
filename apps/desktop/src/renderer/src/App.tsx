@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AgentSummary, ServerHealth } from '../../shared/contracts'
 import { api } from './api'
-import { SECTIONS, Sidebar, type Section } from './components/Sidebar'
+import { SECTIONS, Sidebar, type Section, useSidebarCollapsed } from './components/Sidebar'
 import { Agents } from './pages/Agents'
 import { Coder } from './pages/Coder'
 import { Computers } from './pages/Computers'
@@ -42,6 +42,7 @@ export default function App(): React.JSX.Element {
   const [section, setSection] = useState<Section>(sectionFromHash)
   const [server, setServer] = useState<ServerState>({ health: null, error: null, checking: true })
   const [agents, setAgents] = useState<AgentSummary[]>([])
+  const [collapsed, toggleSidebar] = useSidebarCollapsed()
 
   const refresh = useCallback(async () => {
     setServer((s) => ({ ...s, checking: true }))
@@ -111,9 +112,16 @@ export default function App(): React.JSX.Element {
   const searchReady = server.health?.search.configured ?? true
 
   return (
-    <div className="app">
+    <div className={collapsed ? 'app is-collapsed' : 'app'}>
       <div className="titlebar" />
-      <Sidebar section={section} onSelect={setSection} server={server} onRecheck={refresh} />
+      <Sidebar
+        section={section}
+        onSelect={setSection}
+        server={server}
+        onRecheck={refresh}
+        collapsed={collapsed}
+        onToggle={toggleSidebar}
+      />
       <main className={flush ? 'content is-flush' : 'content'}>
         {section === 'Home' && (
           <Home

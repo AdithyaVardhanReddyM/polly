@@ -20,18 +20,29 @@ interface Props {
   size?: number
   /** Animates the robot's glow; for an agent that is working. */
   active?: boolean
+  /** Just the robot: no tile behind it. */
+  bare?: boolean
+  /** Idle motion (blinks, a small head lift); overrides `active`. */
+  motion?: 'none' | 'slow' | 'medium' | 'fast' | 'fastest'
 }
 
-export function AgentAvatar({ agent, size = 36, active = false }: Props): React.JSX.Element {
+export function AgentAvatar({
+  agent,
+  size = 36,
+  active = false,
+  bare = false,
+  motion
+}: Props): React.JSX.Element {
   const src = useMemo(
     () =>
       new Avatar(style, {
-        backgroundColor: [BACKGROUND[agent.division]],
-        borderRadius: 22,
+        // Bare: a fully transparent tile (left unset, the style picks its own colour).
+        backgroundColor: [bare ? '00000000' : BACKGROUND[agent.division]],
+        borderRadius: bare ? 0 : 22,
         ...agent.avatar,
-        animationVariant: active ? 'slow' : 'none'
+        animationVariant: motion ?? (active ? 'slow' : 'none')
       }).toDataUri(),
-    [agent.avatar, agent.division, active]
+    [agent.avatar, agent.division, active, bare, motion]
   )
 
   return <img className="agent-avatar" src={src} width={size} height={size} alt={agent.name} />

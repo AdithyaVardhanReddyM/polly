@@ -15,6 +15,8 @@ function createWindow(): void {
     show: false,
     title: 'Polly',
     titleBarStyle: 'hiddenInset',
+    // Pinned: the folded sidebar and the headers beside it make room for these.
+    trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#fafafb',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

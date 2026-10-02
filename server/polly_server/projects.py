@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import socket
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from polly_server.coder.context import Mode
 from polly_server.config import settings
@@ -73,6 +76,49 @@ class Project(BaseModel):
     def is_git(self) -> bool:
         return (self.root / ".git").exists()
 
+    @computed_field
+    @property
+    def branch(self) -> str | None:
+        """The checked-out git branch (a short sha when detached), if any."""
+        return current_branch(self.root)
+
+    @computed_field
+    @property
+    def host(self) -> str:
+        """The machine the folder lives on; every project is local for now."""
+        return _HOST
+
+
+def _machine_name() -> str:
+    """The name people know this computer by: "Ada's MacBook Air", not a hostname."""
+    if sys.platform == "darwin":
+        try:
+            name = subprocess.run(
+                ["scutil", "--get", "ComputerName"], capture_output=True, text=True, timeout=2
+            ).stdout.strip()
+            if name:
+                return name
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return socket.gethostname().removesuffix(".local")
+
+
+_HOST = _machine_name()
+
+
+def current_branch(root: Path) -> str | None:
+    """Read HEAD directly: cheap enough to run on every project listing."""
+    git = root / ".git"
+    try:
+        if git.is_file():  # a worktree: `.git` points at the real git dir
+            git = (root / git.read_text().split(":", 1)[1].strip()).resolve()
+        head = (git / "HEAD").read_text().strip()
+    except (OSError, IndexError):
+        return None
+    if head.startswith("ref: refs/heads/"):
+        return head.removeprefix("ref: refs/heads/")
+    return head[:7] or None
+
 
 class TreeNode(BaseModel):
     name: str
@@ -108,7 +154,9 @@ def _read_all() -> list[Project]:
 
 
 def _write_all(projects: list[Project]) -> None:
-    _store_path().write_text(json.dumps([p.model_dump() for p in projects], indent=2))
+    # `branch` and `host` are read live, never stored.
+    rows = [p.model_dump(exclude={"branch", "host"}) for p in projects]
+    _store_path().write_text(json.dumps(rows, indent=2))
 
 
 def project_id_for(path: Path) -> str:

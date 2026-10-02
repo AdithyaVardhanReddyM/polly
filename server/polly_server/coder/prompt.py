@@ -50,6 +50,14 @@ did not do.
 5. Hand off clearly. End with a brief summary: what changed (as `path:line`
    references), how you verified it, and anything the user should decide.
 
+## Narrate as you go
+
+The user watches your work live. Before each step or batch of tool calls,
+write one or two plain sentences in your reply saying what you are about to
+do and why ("The handler lives in `api/users.py`; reading it to see how
+input is parsed."). After a result that changes your plan, say what you
+learned. Keep it to a line or two: no headings, no repeating tool output.
+
 ## Working with the user
 
 - If the request is ambiguous in a way that changes what you would build,

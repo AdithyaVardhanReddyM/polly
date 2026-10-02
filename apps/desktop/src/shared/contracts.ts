@@ -107,6 +107,10 @@ export interface Project {
   path: string
   created_at: number
   settings: ProjectSettings
+  /** The checked-out git branch; null outside a git repository. */
+  branch: string | null
+  /** The machine the folder lives on. */
+  host: string
 }
 
 export interface TreeNode {

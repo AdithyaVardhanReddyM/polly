@@ -1,5 +1,6 @@
 import { structuredPatch } from 'diff'
 import { useMemo } from 'react'
+import { highlightLines } from './highlight'
 
 interface Props {
   before: string
@@ -8,6 +9,8 @@ interface Props {
   context?: number
   /** Cap rendered lines so a huge rewrite cannot freeze the panel. */
   maxLines?: number
+  /** The file's path; when given, lines are syntax-highlighted for its language. */
+  path?: string
 }
 
 interface Line {
@@ -18,7 +21,12 @@ interface Line {
 }
 
 /** A unified diff with old/new line numbers. */
-export function DiffView({ before, after, context = 3, maxLines = 800 }: Props): React.JSX.Element {
+export function DiffView({ before, after, context = 3, maxLines = 800, path }: Props): React.JSX.Element {
+  // Highlight both sides whole, so strings and comments that span lines colour right.
+  const colored = useMemo(
+    () => (path ? { before: highlightLines(before, path), after: highlightLines(after, path) } : null),
+    [before, after, path]
+  )
   const { lines, hidden } = useMemo(() => {
     const patch = structuredPatch('a', 'b', before, after, '', '', { context })
     const out: Line[] = []
@@ -54,7 +62,19 @@ export function DiffView({ before, after, context = 3, maxLines = 800 }: Props):
             <span className="diff-no">{l.oldNo ?? ''}</span>
             <span className="diff-no">{l.newNo ?? ''}</span>
             <span className="diff-sign">{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
-            <span className="diff-text">{l.text || ' '}</span>
+            {colored ? (
+              <span
+                className="diff-text hljs"
+                dangerouslySetInnerHTML={{
+                  __html:
+                    (l.kind === 'del'
+                      ? colored.before[(l.oldNo ?? 0) - 1]
+                      : colored.after[(l.newNo ?? 0) - 1]) || ' '
+                }}
+              />
+            ) : (
+              <span className="diff-text">{l.text || ' '}</span>
+            )}
           </div>
         )
       )}

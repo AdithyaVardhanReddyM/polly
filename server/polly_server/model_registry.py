@@ -34,7 +34,6 @@ MODELS: tuple[ModelSpec, ...] = (
     ModelSpec("zai-org/GLM-5.3", "GLM 5.3", "Z.ai", 1_000_000, reasoning=True),
     ModelSpec("zai-org/GLM-5.3-Flash", "GLM 5.3 Flash", "Z.ai", 1_000_000, reasoning=True),
     ModelSpec("deepseek-ai/DeepSeek-V4-Pro", "DeepSeek V4 Pro", "DeepSeek", 1_000_000),
-    ModelSpec("deepseek-ai/DeepSeek-V4-Pro-0813", "DeepSeek V4 Pro (0813)", "DeepSeek", 979_000),
     ModelSpec("moonshotai/Kimi-K2.7-Code", "Kimi K2.7 Code", "Moonshot", 256_000),
 )
 

@@ -44,6 +44,8 @@
   /* code, diffs, tool output */
   --code-bg: #f6f5f9;
   --code-ink: #2b2a33;
+  --code-surface: #fdfdfe;
+  --user-bubble: #efedf5;
   --diff-add-bg: #e7f6ec;
   --diff-add-ink: #1a6b3d;
   --diff-add-strong: #c9ecd5;
@@ -92,6 +94,8 @@
 
   --code-bg: #15151a;
   --code-ink: #dcdce4;
+  --code-surface: #141418;
+  --user-bubble: #27262e;
   --diff-add-bg: #12261b;
   --diff-add-ink: #7fd6a1;
   --diff-add-strong: #1b3c29;
@@ -154,9 +158,15 @@ code {
 }
 
 .app {
+  --sidebar-w: 224px;
   display: grid;
-  grid-template-columns: 224px 1fr;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   height: 100%;
+  transition: grid-template-columns 0.18s ease;
+}
+
+.app.is-collapsed {
+  --sidebar-w: 64px;
 }
 
 /* ---------- sidebar ---------- */
@@ -164,24 +174,62 @@ code {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
+  min-width: 0;
   padding: 0 12px 14px;
   background: var(--sidebar);
   border-right: 1px solid var(--line);
+  overflow: hidden;
   -webkit-app-region: drag;
+}
+
+/* The row the window buttons sit in; the toggle lives at its right. */
+.sidebar-top {
+  height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: -14px;
+}
+
+.sidebar-toggle {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-toggle:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.sidebar-toggle svg {
+  width: 17px;
+  height: 17px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 46px 8px 2px;
+  padding: 0 8px 2px;
+  white-space: nowrap;
 }
 
 .brand-mark {
   width: 30px;
   height: auto;
   display: block;
+  flex: none;
 }
 
 .brand-name {
@@ -205,18 +253,22 @@ code {
   align-items: center;
   gap: 10px;
   text-align: left;
-  padding: 7px 10px;
+  height: 34px;
+  padding: 0 10px;
   border: none;
   border-radius: var(--radius);
   background: transparent;
   cursor: pointer;
   color: var(--muted);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .nav-item svg {
   width: 17px;
   height: 17px;
+  flex: none;
   color: var(--faint);
 }
 
@@ -248,6 +300,95 @@ code {
   border-bottom: 1px solid var(--line);
 }
 
+/* folded: a floating dock of icons, inset from the window's edges */
+.sidebar.is-collapsed {
+  gap: 4px;
+  margin: 10px 4px 10px 10px;
+  padding: 6px 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--sidebar);
+  box-shadow: var(--shadow-md);
+  overflow: visible;
+}
+
+.sidebar.is-collapsed .sidebar-top {
+  height: 36px;
+  margin-bottom: 2px;
+  padding-bottom: 4px;
+  justify-content: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.sidebar.is-collapsed nav {
+  gap: 4px;
+}
+
+.sidebar.is-collapsed .nav-item {
+  height: 38px;
+}
+
+.sidebar.is-collapsed .sidebar-foot nav {
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
+/* In the Mac app the window buttons keep the top-left corner: the dock starts
+ * below them, and the header beside them makes room. */
+:root[data-chrome='mac'] .sidebar.is-collapsed {
+  margin-top: 46px;
+}
+
+:root[data-chrome='mac'] .app.is-collapsed .rail-head {
+  padding-left: 32px;
+}
+
+/* the strip above the dock still drags the window */
+.app.is-collapsed::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--sidebar-w);
+  height: 44px;
+  -webkit-app-region: drag;
+}
+
+.sidebar.is-collapsed .brand {
+  display: none;
+}
+
+.sidebar.is-collapsed .nav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar.is-collapsed .nav-label {
+  display: none;
+}
+
+.runtime-mini {
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.runtime-mini:hover {
+  background: var(--hover);
+}
+
+.runtime-mini .dot {
+  width: 8px;
+  height: 8px;
+}
+
 .runtime {
   display: flex;
   align-items: center;
@@ -255,6 +396,7 @@ code {
   padding: 0 8px;
   font-size: 12px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .dot {
@@ -278,18 +420,32 @@ code {
 }
 
 .runtime-recheck {
-  align-self: flex-start;
-  margin: 2px 8px 0;
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: none;
+  border-radius: 5px;
   background: none;
   color: var(--faint);
-  font-size: 12px;
   cursor: pointer;
 }
 
 .runtime-recheck:hover {
-  color: var(--brand-ink);
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.runtime-recheck svg {
+  width: 12px;
+  height: 12px;
+}
+
+.is-spinning {
+  animation: spin 0.8s linear infinite;
 }
 
 /* The window is frameless (titleBarStyle: 'hiddenInset'), so the top edge of
@@ -297,7 +453,7 @@ code {
 .titlebar {
   position: fixed;
   top: 0;
-  left: 224px;
+  left: var(--sidebar-w);
   right: 0;
   height: 38px;
   -webkit-app-region: drag;

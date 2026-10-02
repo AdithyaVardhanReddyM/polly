@@ -19,6 +19,8 @@ export default defineConfig({
     root: resolve(__dirname, 'src/renderer'),
     plugins: [react()],
     build: {
+      // File-type icons stay separate files: 1,200 of them would bloat the bundle.
+      assetsInlineLimit: (file) => (file.includes('material-icon-theme') ? false : undefined),
       rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html') } }
     }
   }
