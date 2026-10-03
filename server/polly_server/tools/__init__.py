@@ -1,9 +1,11 @@
 """The pool of tools agents pick from by name (see `AgentSpec.tools`).
 
 Deep Agents provides the file tools, the shell and `task` itself; what lives
-here are the integrations: web search, git, and later GitHub, Gmail and the
-rest. A tool is only registered when its provider is configured, so a spec
-that names it fails loudly (`runtime._pick`) when the key is missing.
+here are Polly's own tools: web search, git, reading pull requests, reports
+and the design canvas. A tool is only registered when its provider is
+configured, so a spec that names it fails loudly (`runtime._pick`) when the
+key is missing. The apps a user connects (Gmail, Slack, Linear…) are not in
+this pool: they come from Composio, per agent (`integrations/composio.py`).
 """
 
 from __future__ import annotations

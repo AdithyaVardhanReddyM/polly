@@ -6,6 +6,7 @@ import './styles.css'
 import './coder.css'
 import './stage.css'
 import './design.css'
+import './integrations.css'
 import { initTheme } from './theme'
 
 initTheme()

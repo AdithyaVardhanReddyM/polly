@@ -3,7 +3,8 @@ Reviewer and the change research that follows a Coder run.
 
 None of them touch the user's disk. Deep agents keep their scratch files in
 graph state (the Deep Agents default backend), and the only tools they get
-are read-only (web, GitHub) plus the one that hands in their result.
+are read-only (web, GitHub) plus the one that hands in their result, and the
+apps the user connected and allowed them (`integrations/`).
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from polly_server.agents import catalog, runtime
 from polly_server.agents.spec import AgentSpec
 from polly_server.coder.context import CoderContext
 from polly_server.config import settings
+from polly_server.integrations import assignments, composio
 from polly_server.models import chat_model, tier_model
 from polly_server.persistence import get_checkpointer
 from polly_server.sessions import Session
@@ -29,7 +31,7 @@ if TYPE_CHECKING:
 # (Nano); the critic has to reason about a whole draft (Ultra).
 SUBAGENT_TIERS: dict[str, str] = {"scout": "fast", "researcher": "fast", "critic": "strong"}
 
-_cache: dict[tuple[str, str, str], CompiledStateGraph] = {}
+_cache: dict[tuple[Any, ...], CompiledStateGraph] = {}
 
 
 def default_model(agent_id: str) -> str:
@@ -52,16 +54,22 @@ def _dated(prompt: str, *, sources: bool = True) -> str:
     return f"{dated} Prefer sources from the last year." if sources else dated
 
 
-def _resolve(spec: AgentSpec) -> AgentSpec:
+def _resolve(spec: AgentSpec, apps: tuple[str, ...]) -> AgentSpec:
     """Drop tools that are not configured (no Tavily key: no web tools), so a
     missing integration degrades the agent instead of breaking it."""
     subagents = tuple(replace(s, tools=tool_registry.available(s.tools)) for s in spec.subagents)
+    prompt = _dated(spec.system_prompt, sources=spec.id != "designer")
     return replace(
         spec,
         tools=tool_registry.available(spec.tools),
         subagents=subagents,
-        system_prompt=_dated(spec.system_prompt, sources=spec.id != "designer"),
+        system_prompt=with_apps(prompt, apps),
     )
+
+
+def with_apps(prompt: str, apps: tuple[str, ...]) -> str:
+    """Tell the agent which connected apps it can act in."""
+    return f"{prompt}\n\n{composio.prompt_for(apps)}" if apps else prompt
 
 
 def build_agent(
@@ -77,11 +85,15 @@ def build_agent(
     if spec is None or spec.status != "ready" or spec.id == "coder":
         raise LookupError(f"{session.agent_id!r} is not an agent Polly can run here")
 
-    key = (session.id, session.model, dt.date.today().isoformat())
+    # Connecting an app or changing what the agent may use rebuilds it on the
+    # next turn.
+    apps = assignments.active(spec.id)
+    key = (session.id, session.model, dt.date.today().isoformat(), apps)
     if use_cache and key in _cache:
         return _cache[key]
 
-    spec = _resolve(spec)
+    connected = composio.tools_for(apps)
+    spec = _resolve(spec, apps if connected else ())
     main = model or chat_model(model=session.model or default_model(spec.id))
     options: dict[str, Any] = {
         "checkpointer": checkpointer or get_checkpointer(),
@@ -110,7 +122,9 @@ def build_agent(
             if s.name in SUBAGENT_TIERS
         }
 
-    agent = runtime.build(spec, tools=tool_registry.registry(), model=main, **options)
+    agent = runtime.build(
+        spec, tools=tool_registry.registry(), extra_tools=connected, model=main, **options
+    )
     if use_cache:
         _cache[key] = agent
     return agent

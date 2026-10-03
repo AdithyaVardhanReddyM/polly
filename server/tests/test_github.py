@@ -1,8 +1,5 @@
-"""GitHub: parsing PR links, the Device Flow, token storage and PR facts,
-all against a mock transport."""
-
-import json
-import stat
+"""GitHub: parsing PR links, anonymous and Composio-backed calls and PR
+facts, all against mock transports."""
 
 import httpx
 import pytest
@@ -12,8 +9,6 @@ from polly_server.api.app import app
 from polly_server.integrations import github
 
 client = TestClient(app)
-
-TOKEN = "gho_" + "a" * 36
 
 
 @pytest.fixture
@@ -34,10 +29,8 @@ def gh(configure):
         return httpx.Response(status, json=body, headers=headers[0] if headers else None)
 
     github.use_transport(httpx.MockTransport(handler))
-    configure(github_client_id="Iv1.test", github_token="")
-    github.disconnect()
+    configure(composio_api_key="")
     yield routes, seen
-    github.disconnect()
     github.use_transport(None)
 
 
@@ -56,87 +49,45 @@ def test_parse_pr_url_accepts_pull_links_only():
             github.parse_pr_url(bad)
 
 
-def test_device_flow_pending_slow_down_then_connected(gh):
+def test_anonymous_calls_carry_no_credentials(gh):
     routes, seen = gh
-    routes[("POST", "/login/device/code")] = {
-        "device_code": "dev-secret",
-        "user_code": "ABCD-1234",
-        "verification_uri": "https://github.com/login/device",
-        "expires_in": 900,
-        "interval": 5,
-    }
-    replies = iter(
-        [
-            {"error": "authorization_pending"},
-            {"error": "slow_down", "interval": 10},
-            {"access_token": TOKEN, "token_type": "bearer"},
-        ]
-    )
-    routes[("POST", "/login/oauth/access_token")] = lambda _req: (200, next(replies))
-    routes[("GET", "/user")] = (200, {"login": "octo"}, {"x-oauth-scopes": "repo, read:user"})
-
-    res = client.post("/integrations/github/device")
-    assert res.status_code == 200
-    start = res.json()
-    assert start["user_code"] == "ABCD-1234"
-    assert "device_code" not in start  # stays on the server
-
-    poll = f"/integrations/github/device/{start['flow_id']}/poll"
-    assert client.post(poll).json()["status"] == "pending"
-    slowed = client.post(poll).json()
-    assert slowed == {**slowed, "status": "pending", "interval": 10}
-    done = client.post(poll).json()
-    assert done["status"] == "connected"
-    assert done["github"]["login"] == "octo"
-    assert done["github"]["scopes"] == ["repo", "read:user"]
-
-    secret = github._secret_file()
-    assert stat.S_IMODE(secret.stat().st_mode) == 0o600
-    assert github.token() == TOKEN
-    assert TOKEN not in json.dumps(client.get("/integrations").json())
-    # The flow is spent.
-    assert client.post(poll).json()["status"] == "expired"
-    assert seen[-1].url.path == "/user"
-
-
-def test_device_flow_denied(gh):
-    routes, _ = gh
-    routes[("POST", "/login/device/code")] = {
-        "device_code": "d",
-        "user_code": "X",
-        "expires_in": 900,
-        "interval": 5,
-    }
-    routes[("POST", "/login/oauth/access_token")] = {"error": "access_denied"}
-    flow = client.post("/integrations/github/device").json()["flow_id"]
-    assert client.post(f"/integrations/github/device/{flow}/poll").json()["status"] == "denied"
+    routes[("GET", "/repos/acme/web/pulls/7")] = {"title": "Add login"}
+    assert github.get_json("/repos/acme/web/pulls/7")["title"] == "Add login"
+    assert "authorization" not in seen[-1].headers
     assert not github.status().connected
 
 
-def test_device_flow_needs_a_client_id(gh, configure):
-    configure(github_client_id="")
-    res = client.post("/integrations/github/device")
-    assert res.status_code == 400
-    assert "GITHUB_CLIENT_ID" in res.json()["detail"]
-
-
-def test_pat_is_checked_then_stored_and_can_be_removed(gh):
+def test_a_connected_account_goes_through_composio(gh, composio_account):
     routes, seen = gh
-    assert (
-        client.post("/integrations/github/token", json={"token": "not a token"}).status_code == 400
+    calls = composio_account("github")
+    calls.replies[("GET", "https://api.github.com/user")] = (200, {"login": "octo"})
+    calls.replies[("POST", "https://api.github.com/repos/acme/web/issues/7/comments")] = (
+        201,
+        {"html_url": "https://github.com/acme/web/pull/7#issuecomment-1"},
     )
-    routes[("GET", "/user")] = (401, {"message": "Bad credentials"})
-    assert client.post("/integrations/github/token", json={"token": TOKEN}).status_code == 401
-    assert not github.status().connected
 
-    routes[("GET", "/user")] = {"login": "octo"}
-    res = client.post("/integrations/github/token", json={"token": TOKEN})
-    assert res.status_code == 200
-    assert res.json()["connected"] and res.json()["source"] == "pat"
-    assert seen[-1].headers["authorization"] == f"Bearer {TOKEN}"
+    status = client.get("/integrations").json()["github"]
+    assert status == {"connected": True, "login": "octo"}
 
-    assert client.delete("/integrations/github").json()["connected"] is False
-    assert github.token() is None
+    ref = github.parse_pr_url("https://github.com/acme/web/pull/7")
+    assert github.post_comment(ref, "Score: 90").endswith("#issuecomment-1")
+    assert calls.seen[-1] == (
+        "github",
+        "POST",
+        "https://api.github.com/repos/acme/web/issues/7/comments",
+        {"body": "Score: 90"},
+    )
+    assert seen == []  # nothing went to GitHub directly
+
+    github.get_json("/repos/acme/web/pulls", per_page=100)
+    assert calls.seen[-1][2] == "https://api.github.com/repos/acme/web/pulls?per_page=100"
+
+
+def test_posting_needs_a_connected_account(gh):
+    ref = github.parse_pr_url("https://github.com/acme/web/pull/7")
+    with pytest.raises(github.GitHubError) as err:
+        github.post_comment(ref, "hi")
+    assert err.value.status == 401
 
 
 def _pr_routes(routes, *, files, ci_conclusion="success"):

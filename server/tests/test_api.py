@@ -41,3 +41,26 @@ def test_every_agent_has_a_distinct_avatar():
     assert all(a["avatar"]["seed"] for a in agents)
     looks = {tuple(sorted(a["avatar"].items() - {("seed", a["avatar"]["seed"])})) for a in agents}
     assert len(looks) == len(agents)
+
+
+def test_integrations_list_and_agent_assignments(composio_account):
+    composio_account("gmail")
+    body = client.get("/integrations").json()
+    assert body["composio"]["configured"] is True
+    items = {i["slug"]: i for i in body["items"]}
+    assert items["gmail"]["state"] == "connected"
+    assert items["slack"]["state"] == "available"
+    assert items["hackernews"]["state"] == "ready"
+    assert "researcher" in items["hackernews"]["agents"]
+
+    res = client.put("/agents/researcher/integrations", json={"integrations": ["gmail", "nope"]})
+    assert res.status_code == 422
+    res = client.put("/agents/researcher/integrations", json={"integrations": ["gmail", "slack"]})
+    assert res.json()["integrations"] == ["gmail", "slack"]
+
+    from polly_server.integrations import assignments
+
+    # Allowed and connected: Slack is allowed but nobody signed in.
+    assert assignments.active("researcher") == ("gmail",)
+    assert client.get("/integrations/nope/logo").status_code == 404
+    assert client.post("/integrations/hackernews/connect").status_code == 400

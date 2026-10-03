@@ -1255,34 +1255,3 @@ code {
   width: 14px;
   height: 14px;
 }
-
-/* ---------- integrations ---------- */
-
-.integration-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 10px;
-}
-
-.integration {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-
-.integration-logo {
-  width: 34px;
-  height: 34px;
-  flex: none;
-  border-radius: var(--radius);
-  background: var(--sidebar);
-  color: var(--muted);
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}

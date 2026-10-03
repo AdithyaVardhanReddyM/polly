@@ -16,7 +16,7 @@ treat them identically:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from polly_server.agents.spec import AgentSpec
@@ -53,6 +53,7 @@ def build(
     spec: AgentSpec,
     *,
     tools: Mapping[str, BaseTool] | None = None,
+    extra_tools: Sequence[BaseTool] = (),
     model: BaseChatModel | None = None,
     subagent_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     **options: Any,
@@ -60,7 +61,8 @@ def build(
     """Build the agent described by `spec`.
 
     `tools` is the pool of tools available to this agent. The spec chooses
-    from it by name. `options` are passed on to the underlying constructor,
+    from it by name. `extra_tools` are added to the main agent as they are: the
+    tools of the apps it is connected to. `options` are passed on to the underlying constructor,
     for example `checkpointer`, `store`, `backend` (deep only) or
     `interrupt_on` (deep only). `subagent_overrides` (deep only) adds
     per-subagent settings by name, such as `model` or `middleware`.
@@ -84,7 +86,7 @@ def build(
         ]
         return create_deep_agent(
             model=model,
-            tools=_pick(tools, spec.tools, spec.id),
+            tools=[*_pick(tools, spec.tools, spec.id), *extra_tools],
             system_prompt=spec.system_prompt or None,
             subagents=subagents or None,
             skills=list(spec.skills) or None,
@@ -97,7 +99,7 @@ def build(
 
         return create_agent(
             model,
-            _pick(tools, spec.tools, spec.id),
+            [*_pick(tools, spec.tools, spec.id), *extra_tools],
             system_prompt=spec.system_prompt or None,
             name=spec.id,
             **options,
@@ -106,4 +108,4 @@ def build(
     builder = _GRAPHS.get(spec.id)
     if builder is None:
         raise LookupError(f"no graph registered for {spec.id!r}; decorate one with @graph")
-    return builder(spec=spec, tools=tools, model=model, **options)
+    return builder(spec=spec, tools=tools, extra_tools=extra_tools, model=model, **options)

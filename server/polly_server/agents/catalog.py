@@ -65,7 +65,8 @@ CATALOG: tuple[AgentSpec, ...] = (
         ),
         status="ready",
         system_prompt=SYSTEM_PROMPT,
-        tools=("web_search", "git_status", "git_diff", "git_branch", "git_commit"),
+        tools=("web_search", "web_extract", "git_status", "git_diff", "git_branch", "git_commit"),
+        integrations=("github", "linear", "sentry"),
         subagents=(
             SubagentSpec(
                 "explorer",
@@ -106,7 +107,8 @@ CATALOG: tuple[AgentSpec, ...] = (
         ),
         status="ready",
         system_prompt=DESIGNER_PROMPT,
-        tools=DESIGN,
+        tools=(*DESIGN, *RESEARCH),
+        integrations=("figma",),
     ),
     AgentSpec(
         id="reviewer",
@@ -158,6 +160,7 @@ CATALOG: tuple[AgentSpec, ...] = (
         status="ready",
         system_prompt=RESEARCHER_PROMPT,
         tools=RESEARCH,
+        integrations=("hackernews", "youtube"),
     ),
     AgentSpec(
         id="deep-research",
@@ -179,6 +182,7 @@ CATALOG: tuple[AgentSpec, ...] = (
         status="ready",
         system_prompt=DEEP_RESEARCH_PROMPT,
         tools=RESEARCH,
+        integrations=("hackernews", "youtube"),
         subagents=(
             SCOUT,
             SubagentSpec(
@@ -231,7 +235,8 @@ CATALOG: tuple[AgentSpec, ...] = (
             "Sorts what needs you from what doesn't, drafts replies in your "
             "voice and tracks threads waiting on someone else."
         ),
-        tools=("gmail",),
+        tools=RESEARCH,
+        integrations=("gmail", "slack"),
     ),
     AgentSpec(
         id="calendar",
@@ -249,7 +254,8 @@ CATALOG: tuple[AgentSpec, ...] = (
         description=(
             "Finds time, proposes slots, books meetings and prepares a brief before each one."
         ),
-        tools=("google_calendar", "gmail"),
+        tools=RESEARCH,
+        integrations=("googlecalendar", "gmail", "googlemeet"),
     ),
     AgentSpec(
         id="operator",
@@ -268,7 +274,8 @@ CATALOG: tuple[AgentSpec, ...] = (
             "Fills forms, makes slide decks and spreadsheets, and works through "
             "web apps on its own desktop."
         ),
-        tools=("computer", "browser", "sandbox"),
+        tools=("computer", "browser", "sandbox", *RESEARCH),
+        integrations=("googledocs", "googlesheets", "googleslides", "googledrive"),
         computer=True,
     ),
 )

@@ -2,12 +2,9 @@ import type {
   AgentSummary,
   Artifacts,
   Decision,
-  DevicePoll,
-  DeviceStart,
   FileChange,
   FileContent,
   FileDiff,
-  GitHubStatus,
   IntegrationsStatus,
   ModelList,
   Project,
@@ -67,7 +64,7 @@ async function request<T>(
 
 const get = <T>(path: string): Promise<Result<T>> => request<T>('GET', path)
 const post = <T>(path: string, body?: unknown): Promise<Result<T>> => request<T>('POST', path, body)
-/** For calls that wait on GitHub (fetching a PR, posting a comment). */
+/** For calls that wait on another service (fetching a PR, starting a sign-in). */
 const postSlow = <T>(path: string, body?: unknown): Promise<Result<T>> =>
   request<T>('POST', path, body, 60_000)
 const patch = <T>(path: string, body: unknown): Promise<Result<T>> => request<T>('PATCH', path, body)
@@ -186,12 +183,24 @@ export const api = {
   },
 
   integrations: {
-    status: () => get<IntegrationsStatus>('/integrations'),
-    githubDevice: () => postSlow<DeviceStart>('/integrations/github/device'),
-    githubPoll: (flowId: string) =>
-      postSlow<DevicePoll>(`/integrations/github/device/${encodeURIComponent(flowId)}/poll`),
-    githubToken: (token: string) => postSlow<GitHubStatus>('/integrations/github/token', { token }),
-    githubDisconnect: () => request<GitHubStatus>('DELETE', '/integrations/github')
+    /** `fresh` skips the server's short cache, for polling during a sign-in. */
+    status: (fresh = false) =>
+      request<IntegrationsStatus>('GET', `/integrations${fresh ? '?fresh=true' : ''}`, undefined, 30_000),
+    /** Returns the link to open in the browser. */
+    connect: (slug: string) =>
+      postSlow<{ url: string }>(`/integrations/${encodeURIComponent(slug)}/connect`),
+    disconnect: (slug: string) =>
+      request<IntegrationsStatus>(
+        'DELETE',
+        `/integrations/${encodeURIComponent(slug)}`,
+        undefined,
+        60_000
+      ),
+    /** Replace the set of connected apps an agent may use. */
+    setForAgent: (agentId: string, integrations: string[]) =>
+      request<AgentSummary>('PUT', `/agents/${encodeURIComponent(agentId)}/integrations`, {
+        integrations
+      })
   }
 }
 

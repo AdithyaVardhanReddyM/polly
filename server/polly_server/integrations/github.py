@@ -1,39 +1,29 @@
-"""GitHub: sign-in with the OAuth Device Flow, and the few API calls agents need.
+"""GitHub: the few API calls the Reviewer needs.
 
-The Device Flow suits a desktop app: no client secret and no redirect
-server. The app shows a short code, the user enters it at
-github.com/login/device, and the server polls until GitHub hands over a token.
-A personal access token (pasted in the app or `GITHUB_TOKEN`) works too.
-
-The token stays on this machine, in `<data_dir>/secrets/github.json` (mode
-0600). It is never sent to the app.
+The account is connected through Composio (Integrations > GitHub). When it
+is, every call goes through Composio's proxy, which adds the user's
+credentials; Polly never holds a GitHub token. Without an account, public
+repositories are read anonymously, within GitHub's anonymous rate limit.
 """
 
 from __future__ import annotations
 
 import base64
-import json
-import os
 import re
-import secrets
-import threading
-import time
-from dataclasses import dataclass
-from typing import Any, Literal
-from urllib.parse import quote
+from typing import Any
+from urllib.parse import quote, urlencode
 
 import httpx
 from pydantic import BaseModel
 
-from polly_server.config import settings
+from polly_server.integrations import composio
+from polly_server.integrations.composio import ComposioError
 
 API = "https://api.github.com"
 WEB = "https://github.com"
-SCOPES = "repo read:user"
 TIMEOUT = 30.0
 
 _transport: httpx.BaseTransport | None = None
-_lock = threading.Lock()
 
 
 class GitHubError(RuntimeError):
@@ -43,197 +33,36 @@ class GitHubError(RuntimeError):
 
 
 def use_transport(transport: httpx.BaseTransport | None) -> None:
-    """Tests route every request through a mock transport."""
+    """Tests route anonymous requests through a mock transport."""
     global _transport
     _transport = transport
 
 
-# ---------- the token ----------
+# ---------- the account ----------
 
 
 class GitHubStatus(BaseModel):
     connected: bool
     login: str | None = None
-    source: Literal["oauth", "pat", "env"] | None = None
-    scopes: list[str] = []
-    device_flow_available: bool
 
 
-def _secret_file():
-    return settings.data_path("secrets") / "github.json"
+_logins: dict[str, str | None] = {}
 
 
-def _stored() -> dict[str, Any] | None:
-    path = _secret_file()
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text())
-    except ValueError:
-        return None
-    return data if isinstance(data, dict) and data.get("token") else None
-
-
-def _store(data: dict[str, Any]) -> None:
-    path = _secret_file()
-    with _lock:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as fh:
-            json.dump(data, fh)
-        os.chmod(path, 0o600)
-
-
-def token() -> str | None:
-    stored = _stored()
-    if stored:
-        return str(stored["token"])
-    return settings.github_token or None
+def connected() -> bool:
+    return composio.is_connected("github")
 
 
 def status() -> GitHubStatus:
-    stored = _stored()
-    available = bool(settings.github_client_id)
-    if stored:
-        return GitHubStatus(
-            connected=True,
-            login=stored.get("login"),
-            source=stored.get("source") or "oauth",
-            scopes=list(stored.get("scopes") or []),
-            device_flow_available=available,
-        )
-    if settings.github_token:
-        return GitHubStatus(connected=True, source="env", device_flow_available=available)
-    return GitHubStatus(connected=False, device_flow_available=available)
-
-
-def disconnect() -> None:
-    with _lock:
-        _secret_file().unlink(missing_ok=True)
-
-
-def _save_token(value: str, source: Literal["oauth", "pat"]) -> GitHubStatus:
-    """Check a token against GitHub, then keep it."""
-    response = _request("GET", "/user", token_override=value)
-    login = response.json().get("login")
-    scopes = [s.strip() for s in response.headers.get("x-oauth-scopes", "").split(",") if s.strip()]
-    _store(
-        {
-            "token": value,
-            "login": login,
-            "source": source,
-            "scopes": scopes,
-            "connected_at": time.time(),
-        }
-    )
-    return status()
-
-
-def connect_with_token(value: str) -> GitHubStatus:
-    value = value.strip()
-    if not re.fullmatch(r"[A-Za-z0-9_]{20,255}", value):
-        raise GitHubError(400, "that does not look like a GitHub token")
-    return _save_token(value, "pat")
-
-
-# ---------- device flow ----------
-
-
-@dataclass
-class _Flow:
-    device_code: str
-    interval: int
-    expires_at: float
-
-
-_flows: dict[str, _Flow] = {}
-
-
-class DeviceStart(BaseModel):
-    flow_id: str
-    user_code: str
-    verification_uri: str
-    expires_in: int
-    interval: int
-
-
-class DevicePoll(BaseModel):
-    status: Literal["pending", "connected", "expired", "denied", "error"]
-    interval: int | None = None
-    message: str | None = None
-    github: GitHubStatus | None = None
-
-
-def _oauth_post(path: str, data: dict[str, str]) -> dict[str, Any]:
-    with httpx.Client(base_url=WEB, timeout=TIMEOUT, transport=_transport) as client:
+    connection = composio.connections().get("github")
+    if connection is None or connection.status != "active":
+        return GitHubStatus(connected=False)
+    if connection.id not in _logins:
         try:
-            response = client.post(path, data=data, headers={"Accept": "application/json"})
-        except httpx.HTTPError as exc:
-            raise GitHubError(502, f"could not reach GitHub: {exc}") from exc
-    try:
-        body = response.json()
-    except ValueError:
-        raise GitHubError(502, f"unexpected reply from GitHub ({response.status_code})") from None
-    if response.status_code >= 400 and "error" not in body:
-        raise GitHubError(response.status_code, str(body)[:200])
-    return body
-
-
-def start_device_flow() -> DeviceStart:
-    if not settings.github_client_id:
-        raise GitHubError(400, "set GITHUB_CLIENT_ID (an OAuth App with Device Flow enabled)")
-    body = _oauth_post(
-        "/login/device/code", {"client_id": settings.github_client_id, "scope": SCOPES}
-    )
-    if "error" in body:
-        raise GitHubError(400, body.get("error_description") or body["error"])
-    flow_id = secrets.token_urlsafe(16)
-    expires_in = int(body.get("expires_in") or 900)
-    interval = int(body.get("interval") or 5)
-    _flows[flow_id] = _Flow(body["device_code"], interval, time.time() + expires_in)
-    return DeviceStart(
-        flow_id=flow_id,
-        user_code=body["user_code"],
-        verification_uri=body.get("verification_uri") or f"{WEB}/login/device",
-        expires_in=expires_in,
-        interval=interval,
-    )
-
-
-def poll_device_flow(flow_id: str) -> DevicePoll:
-    flow = _flows.get(flow_id)
-    if flow is None:
-        return DevicePoll(status="expired", message="start signing in again")
-    if time.time() > flow.expires_at:
-        _flows.pop(flow_id, None)
-        return DevicePoll(status="expired", message="the code expired; start again")
-    body = _oauth_post(
-        "/login/oauth/access_token",
-        {
-            "client_id": settings.github_client_id,
-            "device_code": flow.device_code,
-            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-        },
-    )
-    error = body.get("error")
-    if error == "authorization_pending":
-        return DevicePoll(status="pending", interval=flow.interval)
-    if error == "slow_down":
-        flow.interval = int(body.get("interval") or flow.interval + 5)
-        return DevicePoll(status="pending", interval=flow.interval)
-    if error == "expired_token":
-        _flows.pop(flow_id, None)
-        return DevicePoll(status="expired", message="the code expired; start again")
-    if error == "access_denied":
-        _flows.pop(flow_id, None)
-        return DevicePoll(status="denied", message="sign-in was cancelled on GitHub")
-    if error:
-        _flows.pop(flow_id, None)
-        return DevicePoll(status="error", message=body.get("error_description") or error)
-    access = body.get("access_token")
-    if not access:
-        return DevicePoll(status="error", message="GitHub did not return a token")
-    _flows.pop(flow_id, None)
-    return DevicePoll(status="connected", github=_save_token(str(access), "oauth"))
+            _logins[connection.id] = get_json("/user").get("login")
+        except GitHubError:
+            return GitHubStatus(connected=True)
+    return GitHubStatus(connected=True, login=_logins[connection.id])
 
 
 # ---------- REST ----------
@@ -243,35 +72,43 @@ def _request(
     method: str,
     path: str,
     *,
-    token_override: str | None = None,
     params: dict[str, Any] | None = None,
     json_body: dict[str, Any] | None = None,
-    accept: str = "application/vnd.github+json",
-) -> httpx.Response:
-    headers = {"Accept": accept, "X-GitHub-Api-Version": "2022-11-28"}
-    auth = token_override or token()
-    if auth:
-        headers["Authorization"] = f"Bearer {auth}"
-    with httpx.Client(base_url=API, timeout=TIMEOUT, transport=_transport) as client:
+) -> Any:
+    """One GitHub API call; returns the parsed JSON body."""
+    signed_in = connected()
+    if signed_in:
+        url = f"{API}{path}" + (f"?{urlencode(params)}" if params else "")
         try:
-            response = client.request(method, path, params=params, json=json_body, headers=headers)
-        except httpx.HTTPError as exc:
-            raise GitHubError(502, f"could not reach GitHub: {exc}") from exc
-    if response.status_code >= 400:
+            code, data = composio.proxy("github", method, url, json_body)
+        except ComposioError as exc:
+            raise GitHubError(exc.status, f"GitHub through Composio: {exc}") from exc
+    else:
+        headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+        with httpx.Client(base_url=API, timeout=TIMEOUT, transport=_transport) as client:
+            try:
+                response = client.request(
+                    method, path, params=params, json=json_body, headers=headers
+                )
+            except httpx.HTTPError as exc:
+                raise GitHubError(502, f"could not reach GitHub: {exc}") from exc
+        code = response.status_code
         try:
-            message = response.json().get("message") or response.text
+            data = response.json()
         except ValueError:
-            message = response.text
-        if response.status_code in (401, 403) and not auth:
+            data = response.text
+    if code >= 400:
+        message = (data.get("message") if isinstance(data, dict) else None) or str(data)
+        if code in (401, 403) and not signed_in:
             message = f"{message} (connect GitHub in Integrations for private repos)"
-        elif response.status_code == 404:
+        elif code == 404:
             message = "not found, or this GitHub account cannot see it"
-        raise GitHubError(response.status_code, str(message)[:300])
-    return response
+        raise GitHubError(code, str(message)[:300])
+    return data
 
 
 def get_json(path: str, **params: Any) -> Any:
-    return _request("GET", path, params=params or None).json()
+    return _request("GET", path, params=params or None)
 
 
 # ---------- pull requests ----------
@@ -417,7 +254,7 @@ def file_at(ref: PRRef, path: str, sha: str) -> str:
 
 
 def post_comment(ref: PRRef, body: str) -> str:
-    if not token():
+    if not connected():
         raise GitHubError(401, "connect GitHub first")
-    response = _request("POST", f"{ref.api}/issues/{ref.number}/comments", json_body={"body": body})
-    return str(response.json().get("html_url") or ref.url)
+    posted = _request("POST", f"{ref.api}/issues/{ref.number}/comments", json_body={"body": body})
+    return str(posted.get("html_url") or ref.url)

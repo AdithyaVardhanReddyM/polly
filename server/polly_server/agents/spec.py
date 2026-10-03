@@ -43,8 +43,11 @@ class AgentSpec:
     status: Status = "planned"
     runtime: Runtime = "agent"
     system_prompt: str = ""
-    # Names resolved against the tool registry: integrations, search, sandbox…
+    # Names resolved against the tool registry: search, git, sandbox…
     tools: tuple[str, ...] = ()
+    # Connected apps the agent may use from the start (Composio toolkit slugs,
+    # see `integrations/catalog.py`). The user can change the set later.
+    integrations: tuple[str, ...] = ()
     subagents: tuple[SubagentSpec, ...] = ()
     # Folders of SKILL.md files the agent can load on demand.
     skills: tuple[str, ...] = ()

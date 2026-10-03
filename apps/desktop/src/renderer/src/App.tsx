@@ -167,7 +167,7 @@ export default function App(): React.JSX.Element {
           <Agents agents={agents} server={server} openable={Object.keys(HOME_OF)} onOpen={openAgent} />
         )}
         {section === 'Computers' && <Computers agents={agents} server={server} />}
-        {section === 'Integrations' && <Integrations />}
+        {section === 'Integrations' && <Integrations agents={agents} />}
         {section === 'Settings' && <Settings server={server} onRecheck={refresh} />}
       </main>
     </div>

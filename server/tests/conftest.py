@@ -7,6 +7,7 @@ _DATA = tempfile.mkdtemp(prefix="polly-test-")
 os.environ["POLLY_DATA_DIR"] = _DATA
 os.environ.pop("NEBIUS_API_KEY", None)
 os.environ.pop("TAVILY_API_KEY", None)
+os.environ.pop("COMPOSIO_API_KEY", None)
 
 import pytest  # noqa: E402
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel  # noqa: E402
@@ -86,6 +87,33 @@ def configure():
     for name, value in saved.items():
         object.__setattr__(settings, name, value)
     tools.registry.cache_clear()
+
+
+@pytest.fixture
+def composio_account(configure, monkeypatch):
+    """Pretend the user connected accounts through Composio. Proxied calls are
+    recorded and answered from `replies`."""
+    from types import SimpleNamespace
+
+    from polly_server.integrations import composio, github
+
+    connected: dict[str, composio.Connection] = {}
+    calls = SimpleNamespace(seen=[], replies={})
+
+    def proxy(slug, method, url, body=None):
+        calls.seen.append((slug, method, url, body))
+        return calls.replies.get((method, url), (200, None))
+
+    def connect(slug):
+        configure(composio_api_key="test-key")
+        connected[slug] = composio.Connection(f"ca_{slug}", slug, "active")
+        return calls
+
+    monkeypatch.setattr(composio, "connections", lambda fresh=False: connected)
+    monkeypatch.setattr(composio, "proxy", proxy)
+    monkeypatch.setattr(composio, "tools_for", lambda toolkits: [])
+    github._logins.clear()
+    return connect
 
 
 @pytest.fixture

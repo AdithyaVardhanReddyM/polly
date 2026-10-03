@@ -177,7 +177,7 @@ function ReviewStart({ onConnect }: { onConnect: () => void }): React.JSX.Elemen
       <div className="welcome-points">
         {github?.connected ? (
           <span>
-            <ShieldCheck /> Signed in to GitHub as @{github.login}
+            <ShieldCheck /> GitHub connected{github.login ? ` as @${github.login}` : ''}
           </span>
         ) : (
           <span>

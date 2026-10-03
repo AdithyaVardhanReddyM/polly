@@ -17,6 +17,8 @@ dependencies = [
     "langchain-tavily>=0.2",
     "langgraph-checkpoint-sqlite>=3.1.1",
     "beautifulsoup4>=4.15.0",
+    "composio>=0.22.0",
+    "composio-langchain>=0.25.0",
 ]
 
 [project.optional-dependencies]

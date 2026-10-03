@@ -17,6 +17,7 @@ import {
   Globe,
   ListChecks,
   PenTool,
+  Plug,
   ScanEye,
   Search,
   ShieldCheck,
@@ -38,6 +39,13 @@ const s = (v: unknown): string => (v === undefined || v === null ? '' : String(v
 const prSlug = (url: unknown): string => {
   const m = s(url).match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
   return m ? `${m[1]}/${m[2]}#${m[3]}` : s(url)
+}
+
+/** GMAIL_SEND_EMAIL → "Gmail: send email". */
+const appTool = (slug: unknown): string => {
+  const [app, ...rest] = s(slug).toLowerCase().split('_')
+  if (!app) return ''
+  return `${app.charAt(0).toUpperCase()}${app.slice(1)}: ${rest.join(' ')}`
 }
 
 export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta {
@@ -79,6 +87,25 @@ export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta 
         }
       })
       return { icon: <BookOpen />, verb: 'Read', target: hosts.join(', ') }
+    }
+    case 'COMPOSIO_SEARCH_TOOLS': {
+      const queries = Array.isArray(args.queries) ? args.queries : []
+      const first = queries[0] as { use_case?: unknown } | undefined
+      return { icon: <Plug />, verb: 'Find a tool', target: s(first?.use_case) }
+    }
+    case 'COMPOSIO_GET_TOOL_SCHEMAS':
+      return {
+        icon: <Plug />,
+        verb: 'Read tool inputs',
+        target: (Array.isArray(args.tool_slugs) ? args.tool_slugs : []).map(appTool).join(', ')
+      }
+    case 'COMPOSIO_MULTI_EXECUTE_TOOL': {
+      const calls = Array.isArray(args.tools) ? (args.tools as { tool_slug?: unknown }[]) : []
+      return {
+        icon: <Plug />,
+        verb: 'Use app',
+        target: calls.map((c) => appTool(c.tool_slug)).join(', ')
+      }
     }
     case 'github_pr_overview':
       return { icon: <GitPullRequest />, verb: 'Open PR', target: prSlug(args.pr_url) }

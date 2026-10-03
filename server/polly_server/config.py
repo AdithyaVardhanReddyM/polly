@@ -46,10 +46,9 @@ class Settings:
     sandbox_provider: str
     tavily_api_key: str
 
-    # GitHub: an OAuth App's client id (Device Flow, no secret needed) and/or
-    # a personal access token used when nobody has connected in the app.
-    github_client_id: str
-    github_token: str
+    # Composio: the accounts a user connects (Gmail, GitHub, Slack…) and the
+    # tools agents get from them.
+    composio_api_key: str
 
     @property
     def search_configured(self) -> bool:
@@ -86,8 +85,7 @@ def load() -> Settings:
         vision_model=_env("POLLY_VISION_MODEL", DEFAULT_VISION_MODEL),
         sandbox_provider=_env("POLLY_SANDBOX", "contree"),
         tavily_api_key=_env("TAVILY_API_KEY"),
-        github_client_id=_env("GITHUB_CLIENT_ID"),
-        github_token=_env("GITHUB_TOKEN"),
+        composio_api_key=_env("COMPOSIO_API_KEY"),
     )
 
 

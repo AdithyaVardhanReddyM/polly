@@ -13,7 +13,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from polly_server import tools as tool_registry
-from polly_server.agents import catalog, runtime
+from polly_server.agents import builders, catalog, runtime
 from polly_server.coder.changes import ChangeTracker, make_tracked_backend
 from polly_server.coder.context import CoderContext
 from polly_server.coder.permissions import (
@@ -21,6 +21,7 @@ from polly_server.coder.permissions import (
     ReadOnlyToolsMiddleware,
     build_interrupt_on,
 )
+from polly_server.integrations import assignments, composio
 from polly_server.models import chat_model
 from polly_server.persistence import get_checkpointer
 from polly_server.projects import Project, memory_dir
@@ -74,7 +75,8 @@ def build_coder(
 ) -> CompiledStateGraph:
     from langchain.agents.middleware import TodoListMiddleware
 
-    key = (session.id, session.model)
+    apps = assignments.active("coder")
+    key = (session.id, session.model, apps)
     if use_cache and key in _cache:
         return _cache[key]
 
@@ -88,6 +90,9 @@ def build_coder(
         # search) is left out rather than failing the whole build.
         subagents=tuple(s for s in spec.subagents if all(t in have for t in s.tools)),
     )
+    connected = composio.tools_for(apps)
+    if connected:
+        spec = replace(spec, system_prompt=builders.with_apps(spec.system_prompt, apps))
 
     main = model or chat_model(model=session.model)
     fast = fast_model or chat_model("fast")
@@ -95,6 +100,7 @@ def build_coder(
     agent = runtime.build(
         spec,
         tools=tool_registry.registry(),
+        extra_tools=connected,
         model=main,
         backend=make_backend(project, session),
         memory=MEMORY_FILES,

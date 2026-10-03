@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from polly_server.agents.spec import AgentSpec, Division, Runtime, Status
 from polly_server.coder.context import Mode
 from polly_server.coder.permissions import Rule
+from polly_server.integrations import assignments
 from polly_server.projects import Project
 from polly_server.sessions import Session
 
@@ -23,6 +24,8 @@ class AgentSummary(BaseModel):
     status: Status
     runtime: Runtime
     tools: list[str]
+    # Connected apps the agent may use (Composio toolkit slugs).
+    integrations: list[str]
     subagents: list[str]
     computer: bool
     avatar: dict[str, str]
@@ -38,6 +41,7 @@ class AgentSummary(BaseModel):
             status=spec.status,
             runtime=spec.runtime,
             tools=list(spec.tools),
+            integrations=list(assignments.enabled(spec.id)),
             subagents=[s.name for s in spec.subagents],
             computer=spec.computer,
             avatar={"seed": spec.id, **spec.avatar},
@@ -64,6 +68,7 @@ class Health(BaseModel):
     sandbox: Provider
     search: Provider
     github: Provider
+    composio: Provider
 
 
 # ---------- models ----------
@@ -188,13 +193,41 @@ class Artifacts(BaseModel):
 # ---------- integrations ----------
 
 
-class TokenIn(BaseModel):
-    token: str = Field(min_length=1, max_length=400)
+class IntegrationOut(BaseModel):
+    slug: str
+    name: str
+    category: str
+    description: str
+    # oauth | api_key | none | custom (see `integrations/catalog.py`)
+    auth: str
+    # connected | expired | available | ready (needs no account)
+    state: str
+    connected_at: str | None = None
+    # How many tools the app gives an agent; null when not known.
+    tools: int | None = None
+    # Agents allowed to use it.
+    agents: list[str] = []
+
+
+class IntegrationCategory(BaseModel):
+    id: str
+    label: str
 
 
 class Integrations(BaseModel):
-    github: dict[str, Any]
+    composio: Provider
     tavily: Provider
+    github: dict[str, Any]
+    categories: list[IntegrationCategory]
+    items: list[IntegrationOut]
+
+
+class ConnectStart(BaseModel):
+    url: str
+
+
+class AgentIntegrationsIn(BaseModel):
+    integrations: list[str] = Field(max_length=100)
 
 
 # ---------- reviews ----------

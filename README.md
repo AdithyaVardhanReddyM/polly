@@ -125,12 +125,19 @@ Grades are A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60 and F below that. The verdict 
 
 ### Connecting GitHub
 
-Public PRs work without signing in, within GitHub's anonymous rate limit. To review private repos and to post comments, open **Integrations → GitHub** and either:
+Public PRs work without signing in, within GitHub's anonymous rate limit. To review private repos and to post comments, open **Integrations → GitHub** and connect your account. The Reviewer's calls then go through Composio, which adds your credentials; Polly never holds a GitHub token.
 
-1. **Sign in with GitHub (Device Flow).** Create an [OAuth App](https://github.com/settings/developers), tick **Enable Device Flow**, and set `GITHUB_CLIENT_ID` in `.env`. No client secret and no callback server are needed. The app shows a code; enter it on GitHub and Polly finishes the sign-in. It requests the `repo read:user` scopes.
-2. **Use a token.** Paste a fine-grained personal access token with *Pull requests: read* (add *write* to post comments), or set `GITHUB_TOKEN` in `.env`.
+## Integrations
 
-The token stays on the server, in `.polly/secrets/github.json` with mode `0600`. It is never sent to the app.
+The **Integrations** page connects your apps through [Composio](https://composio.dev): Gmail, Google Calendar, Docs, Sheets, Slides, Drive, Meet and Maps, YouTube, Notion, Linear, Jira, Slack, GitHub, Sentry, Supabase, Neon, PostHog, Stripe, LinkedIn, Hacker News, Apollo and more. Set `COMPOSIO_API_KEY` in `.env` to turn it on.
+
+- **Connecting** opens the provider's sign-in page in your browser (or a Composio page for apps that use an API key). Tokens and keys stay with Composio and are never stored on this machine.
+- **Each agent gets only the apps you allow.** Open an app to choose which agents may use it. Built-in agents start with sensible defaults (the Coder with GitHub, Linear and Sentry; the Researcher with Hacker News and YouTube), and custom agents will pick from the same list.
+- **Agents stay light.** An agent does not carry every tool of every app. It gets a Composio session scoped to its apps, searches for the tool it needs and runs it.
+- **Acting needs your say.** Agents may read freely, and are told to ask before anything that sends, posts, pays or deletes. In the Coder, running an app tool goes through the same approval cards as commands.
+- X (Twitter) has no shared sign-in: create an auth config for it with your own OAuth app in the Composio dashboard first.
+
+**Web search is built in, not an integration.** Every agent has Tavily search and page reading, called directly with `TAVILY_API_KEY`.
 
 ## Models per role
 
@@ -159,9 +166,9 @@ Override the tiers with `POLLY_MODEL`, `POLLY_FAST_MODEL` and `POLLY_STRONG_MODE
 │  apps/desktop            │ ◄─────────────────────── │  server/                         │
 └──────────────────────────┘                          └───────┬───────────┬──────────┬───┘
                                                               │           │          │
-                                              Nebius Token Factory   Nebius ConTree   Tavily, GitHub,
-                                              (NVIDIA Nemotron)      (sandboxes and   Gmail, Calendar,
-                                                                      computers)       Slack, Notion…
+                                              Nebius Token Factory   Nebius ConTree   Tavily, Composio
+                                              (NVIDIA Nemotron)      (sandboxes and   (Gmail, GitHub,
+                                                                      computers)       Slack, Notion…)
 ```
 
 | Layer | Choice |
@@ -169,7 +176,8 @@ Override the tiers with `POLLY_MODEL`, `POLLY_FAST_MODEL` and `POLLY_STRONG_MODE
 | Models | NVIDIA Nemotron (Nemotron 3 Super by default, Nano for fast subagents) via **Nebius Token Factory** |
 | Agent runtimes | [Deep Agents](https://docs.langchain.com/oss/python/deepagents/overview) for long-running work, [LangChain agents](https://docs.langchain.com/oss/python/langchain/agents) for quick tasks, [LangGraph](https://docs.langchain.com/oss/python/langgraph/overview) for fixed flows — see below |
 | Sandboxes | **Nebius ConTree**, plugged in as a Deep Agents sandbox backend |
-| Search | Tavily |
+| Search | Tavily, built in to every agent |
+| Integrations | [Composio](https://composio.dev): connected accounts and their tools, scoped per agent |
 | Server | Python 3.11+, FastAPI, uv |
 | Desktop | Electron, React 19, TypeScript, Vite (macOS first; the renderer also runs in a browser, which becomes the web app) |
 
@@ -199,7 +207,7 @@ server/
     coder/             the Coder: prompt, permissions, change tracking, event stream, runs
     research/          Tavily client, numbered sources, prompts, research after the Coder
     reviewer/          the Reviewer's prompt and the scoring rubric
-    integrations/      GitHub: Device Flow sign-in, token storage, PR API calls
+    integrations/      Composio: the app catalog, connections, per-agent access; GitHub PR calls
     tools/             tools agents pick by name (research, GitHub, git, reports)
     api/               FastAPI app, routers and wire schemas
     artifacts.py       sources, reports and scorecards saved per session
@@ -222,7 +230,7 @@ docs/                  logo and other assets
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
 - A [Nebius Token Factory](https://tokenfactory.nebius.com) API key
 - A [Tavily](https://tavily.com) API key, for Research, Deep Research and research after the Coder
-- Optional: a GitHub OAuth App client ID or a personal access token (see [Connecting GitHub](#connecting-github))
+- Optional: a [Composio](https://composio.dev) API key, to connect apps (see [Integrations](#integrations))
 
 ### Setup
 
@@ -264,10 +272,9 @@ npm run typecheck           # TypeScript
 - [x] Research and Deep Research with Tavily, with numbered citations
 - [x] Research after every Coder change: verification report and PR description
 - [x] Reviewer: score a GitHub PR, post the score as a comment after a preview
-- [x] GitHub sign-in (Device Flow) or a personal access token
+- [x] Integrations through Composio: 45+ apps, connected once and allowed per agent
 - [ ] Coder cloud sessions in sandboxes, with GitHub (push and pull requests)
 - [ ] Agent builder: instructions, skills, knowledge, tools
-- [ ] Integrations: Gmail, Calendar, Slack, Notion, Linear
 - [ ] Virtual desktops for computer-use agents
 - [ ] Approvals for every agent's actions with side effects
 - [ ] Web app
@@ -278,14 +285,14 @@ npm run typecheck           # TypeScript
 
 1. **Coder, then research.** Open a project and ask the Coder to make a change that touches a dependency. When it finishes, the *Research* tab opens by itself. Show the verdict, a cited finding and *Copy PR description*.
 2. **Reviewer.** On Home, paste a GitHub PR link and press Enter. Show the live tool steps, the PR panel (CI and size) and the scorecard: grade, category bars, any cap that was applied, and findings with suggestions.
-3. **Post the score.** Click *Post as PR comment*, show the preview, connect GitHub with the Device Flow if needed, then post and open the comment.
+3. **Post the score.** Click *Post as PR comment*, show the preview, connect GitHub on the Integrations page if needed, then post and open the comment.
 4. **Deep Research.** Ask a comparison question in *Deep*. Show scouts running in parallel, the critic pass, and citations that link to the sources panel.
 
 ### What changed during the submission period
 
 - New agents: Researcher, Deep Research and Reviewer, plus change research after the Coder.
 - Tavily search and extraction, with session-wide numbered sources and citations in the UI.
-- GitHub integration: Device Flow sign-in, token storage, PR reading tools and preview-then-post comments.
+- Integrations through Composio: one page to connect apps, per-agent access, and GitHub PR reading with preview-then-post comments.
 - A deterministic PR scoring rubric with caps, grades and verdicts.
 - Model tiers: Ultra for scoring and critique, Nano for scouts and helpers.
 - Desktop: Research and Review pages, the Coder's Research tab, and a live Integrations page.

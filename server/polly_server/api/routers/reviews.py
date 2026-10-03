@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from polly_server import artifacts, model_registry, sessions
 from polly_server.agents import builders
-from polly_server.api.routers.integrations import http_error
+from polly_server.api.routers.integrations import github_error as http_error
 from polly_server.api.schemas import CommentPosted, CommentPreview, ReviewCreate
 from polly_server.coder.runs import manager
 from polly_server.config import settings
@@ -87,7 +87,7 @@ async def post_comment(session_id: str) -> CommentPosted:
     facts = artifacts.load(session.id, "pr") or {}
     if not facts.get("url"):
         raise HTTPException(400, "this session did not review a pull request")
-    if not github.token():
+    if not github.connected():
         raise HTTPException(401, "connect GitHub in Integrations to post comments")
     ref = github.parse_pr_url(facts["url"])
     try:

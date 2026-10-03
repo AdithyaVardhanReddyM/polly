@@ -44,6 +44,10 @@ READ_TOOLS = frozenset(
         "git_status",
         "git_diff",
         "web_search",
+        "web_extract",
+        "research_search",
+        "COMPOSIO_SEARCH_TOOLS",
+        "COMPOSIO_GET_TOOL_SCHEMAS",
         "write_todos",
         "task",
     }
@@ -51,7 +55,10 @@ READ_TOOLS = frozenset(
 WRITE_TOOLS = frozenset({"write_file", "edit_file"})
 DELETE_TOOLS = frozenset({"delete"})
 EXEC_TOOLS = frozenset({"execute", "git_commit", "git_branch"})
-GATED_TOOLS = WRITE_TOOLS | DELETE_TOOLS | EXEC_TOOLS
+# Acting in a connected app (send an email, open an issue) is gated like a
+# command: it reaches outside the project.
+APP_TOOLS = frozenset({"COMPOSIO_MULTI_EXECUTE_TOOL"})
+GATED_TOOLS = WRITE_TOOLS | DELETE_TOOLS | EXEC_TOOLS | APP_TOOLS
 
 # Paths the agent keeps for itself (memory, compacted history): never gated,
 # never shown as a change.
@@ -284,6 +291,10 @@ def describe(tool_call: dict[str, Any], *_: Any) -> str:
         return f"Commit: {args.get('message', '')}"
     if name == "git_branch":
         return f"Switch to branch {args.get('name', '')}"
+    if name in APP_TOOLS:
+        calls = [t for t in args.get("tools") or [] if isinstance(t, dict)]
+        slugs = ", ".join(str(t.get("tool_slug", "")) for t in calls)
+        return f"Use connected apps: {slugs}" if slugs else "Use a connected app"
     return f"{name} {json.dumps(args)[:200]}"
 
 

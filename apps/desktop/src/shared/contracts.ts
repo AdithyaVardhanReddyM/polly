@@ -42,8 +42,10 @@ export interface AgentSummary {
   description: string
   status: AgentStatus
   runtime: AgentRuntime
-  /** Tools the agent can call: integrations, sandbox, computer, search… */
+  /** Tools the agent can call: search, git, sandbox, computer… */
   tools: string[]
+  /** Connected apps the agent may use (Composio toolkit slugs). */
+  integrations: string[]
   /** Specialists the agent can hand work to. */
   subagents: string[]
   /** Whether the agent gets its own virtual computer. */
@@ -59,6 +61,7 @@ export interface ServerHealth {
   sandbox: { provider: string; configured: boolean }
   search: { provider: string; configured: boolean }
   github: { provider: string; configured: boolean }
+  composio: { provider: string; configured: boolean }
 }
 
 // ---------- models ----------
@@ -355,30 +358,38 @@ export interface Artifacts {
 export interface GitHubStatus {
   connected: boolean
   login: string | null
-  source: 'oauth' | 'pat' | 'env' | null
-  scopes: string[]
-  /** Whether the server has an OAuth App client id for the Device Flow. */
-  device_flow_available: boolean
+}
+
+/**
+ * oauth: sign in on the provider's site · api_key: paste a key on Composio's
+ * page · none: nothing to connect · custom: needs your own OAuth app.
+ */
+export type IntegrationAuth = 'oauth' | 'api_key' | 'none' | 'custom'
+
+/** ready: works without an account. */
+export type IntegrationState = 'connected' | 'expired' | 'available' | 'ready'
+
+export interface Integration {
+  /** The Composio toolkit slug. */
+  slug: string
+  name: string
+  category: string
+  description: string
+  auth: IntegrationAuth
+  state: IntegrationState
+  connected_at: string | null
+  /** How many tools the app gives an agent; null when not known. */
+  tools: number | null
+  /** Ids of the agents allowed to use it. */
+  agents: string[]
 }
 
 export interface IntegrationsStatus {
-  github: GitHubStatus
+  composio: { provider: string; configured: boolean }
   tavily: { provider: string; configured: boolean }
-}
-
-export interface DeviceStart {
-  flow_id: string
-  user_code: string
-  verification_uri: string
-  expires_in: number
-  interval: number
-}
-
-export interface DevicePoll {
-  status: 'pending' | 'connected' | 'expired' | 'denied' | 'error'
-  interval: number | null
-  message: string | null
-  github: GitHubStatus | null
+  github: GitHubStatus
+  categories: { id: string; label: string }[]
+  items: Integration[]
 }
 
 // ---------- coder: the event stream ----------
