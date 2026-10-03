@@ -4,6 +4,8 @@
   --brand-tint: #f3eeff;
   --brand-ink: #4b3a8c;
   --brand-hover: #8069c8;
+  /* the selected row in the sidebar: clearly purple, still quiet */
+  --selected: color-mix(in srgb, var(--brand) 22%, var(--sidebar));
 
   --bg: #fafafb;
   --sidebar: #f4f3f8;
@@ -64,6 +66,7 @@
   --brand-tint: #26213a;
   --brand-ink: #cdbfff;
   --brand-hover: #b19ff0;
+  --selected: color-mix(in srgb, var(--brand) 26%, var(--sidebar));
 
   --bg: #111114;
   --sidebar: #16161a;
@@ -158,7 +161,7 @@ code {
 }
 
 .app {
-  --sidebar-w: 224px;
+  --sidebar-w: 300px;
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   height: 100%;
@@ -176,7 +179,7 @@ code {
   flex-direction: column;
   gap: 18px;
   min-width: 0;
-  padding: 0 12px 14px;
+  padding: 0 14px 12px;
   background: var(--sidebar);
   border-right: 1px solid var(--line);
   overflow: hidden;
@@ -256,7 +259,7 @@ code {
   align-items: center;
   gap: 10px;
   text-align: left;
-  height: 34px;
+  height: 36px;
   padding: 0 10px;
   border: none;
   border-radius: var(--radius);
@@ -281,7 +284,7 @@ code {
 }
 
 .nav-item.is-active {
-  background: var(--brand-tint);
+  background: var(--selected);
   color: var(--brand-ink);
 }
 
@@ -291,16 +294,266 @@ code {
 
 .sidebar-foot {
   margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
   -webkit-app-region: no-drag;
+}
+
+/* ---------- sidebar agents: one row per agent, like a messaging list ---------- */
+
+.buddies {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-bottom: -18px;
+  -webkit-app-region: no-drag;
 }
 
-.sidebar-foot nav {
-  padding-bottom: 8px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--line);
+.buddies-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.buddy-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 2px 0 4px;
+}
+
+.buddy-search > svg {
+  position: absolute;
+  left: 10px;
+  width: 15px;
+  height: 15px;
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.buddy-search input {
+  width: 100%;
+  height: 34px;
+  padding: 0 30px 0 32px;
+  border: none;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ink) 6%, var(--sidebar));
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: background 0.12s ease;
+}
+
+.buddy-search input::placeholder {
+  color: var(--faint);
+}
+
+.buddy-search input:focus,
+.buddy-search input:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--ink) 9%, var(--sidebar));
+}
+
+.buddy-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.buddy-search-clear {
+  position: absolute;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.buddy-search-clear:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.buddy-search-clear svg {
+  width: 13px;
+  height: 13px;
+}
+
+.buddies-empty {
+  padding: 14px 10px;
+  font-size: 12.5px;
+  color: var(--faint);
+}
+
+.buddies-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -4px;
+  padding: 0 4px 14px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.buddy {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.buddy:hover {
+  background: var(--hover);
+}
+
+.buddy.is-active {
+  background: var(--selected);
+}
+
+.buddy-avatar {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+
+/* the "online" dot of a messaging app: this agent is at work right now */
+.buddy-live {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ok);
+  border: 2px solid var(--sidebar);
+}
+
+.buddy.is-active .buddy-live {
+  border-color: var(--selected);
+}
+
+.buddy.is-active .buddy-sub {
+  color: color-mix(in srgb, var(--brand-ink) 75%, var(--muted));
+}
+
+.buddy-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.buddy-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.buddy-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.buddy.is-active .buddy-name {
+  color: var(--brand-ink);
+}
+
+.buddy-time {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.buddy-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.buddy-sub > span:last-child {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.buddy.is-working .buddy-sub,
+.buddy.is-working .buddy-time {
+  color: var(--brand);
+}
+
+.buddy.is-working .buddy-sub {
+  font-weight: 500;
+}
+
+/* "typing…": three dots, one after another */
+.buddy-typing {
+  flex: none;
+  display: inline-flex;
+  gap: 3px;
+}
+
+.buddy-typing i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: buddy-typing 1.2s ease-in-out infinite;
+}
+
+.buddy-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.buddy-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes buddy-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
 }
 
 /* folded: a floating dock of icons, inset from the window's edges */
@@ -331,9 +584,37 @@ code {
   height: 38px;
 }
 
-.sidebar.is-collapsed .sidebar-foot nav {
-  padding-bottom: 6px;
-  margin-bottom: 2px;
+.sidebar.is-collapsed .sidebar-foot {
+  padding-top: 5px;
+}
+
+.sidebar.is-collapsed .buddies {
+  margin: 2px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.sidebar.is-collapsed .buddies-head,
+.sidebar.is-collapsed .buddy-search,
+.sidebar.is-collapsed .buddies-empty,
+.sidebar.is-collapsed .buddy-body {
+  display: none;
+}
+
+.sidebar.is-collapsed .buddies-list {
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 6px;
+}
+
+.sidebar.is-collapsed .buddy {
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.sidebar.is-collapsed .buddy-avatar .agent-avatar {
+  width: 34px;
+  height: 34px;
 }
 
 /* In the Mac app the window buttons keep the top-left corner: the dock starts
@@ -370,24 +651,7 @@ code {
   display: none;
 }
 
-.runtime-mini {
-  align-self: center;
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.runtime-mini:hover {
-  background: var(--hover);
-}
-
-.runtime-mini .dot {
+.dot {
   width: 8px;
   height: 8px;
 }
@@ -420,31 +684,6 @@ code {
 
 .dot-down {
   background: var(--line-strong);
-}
-
-.runtime-recheck {
-  margin-left: auto;
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: none;
-  color: var(--faint);
-  cursor: pointer;
-}
-
-.runtime-recheck:hover {
-  color: var(--ink);
-  background: var(--hover);
-}
-
-.runtime-recheck svg {
-  width: 12px;
-  height: 12px;
 }
 
 .is-spinning {

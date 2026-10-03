@@ -3480,11 +3480,9 @@ kbd {
 
 .session-panel h4 {
   margin: 0;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .session-panel p {
@@ -3738,11 +3736,9 @@ a.btn {
   align-items: center;
   gap: 8px;
   padding: 2px 4px 8px;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .sources {
@@ -3846,9 +3842,8 @@ a.btn {
 }
 
 .sev {
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 10px;
+  text-transform: capitalize;
+  font-size: 11px;
   height: 18px;
   padding: 0 6px;
   border-radius: 5px;
@@ -4134,11 +4129,9 @@ a.btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .score-section h4 svg {
@@ -4198,10 +4191,8 @@ a.btn {
 }
 
 .finding-fix > span {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: var(--ok);
 }
 

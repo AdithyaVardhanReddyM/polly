@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AgentSummary, ServerHealth } from '../../shared/contracts'
 import { api } from './api'
-import { SECTIONS, Sidebar, type Section, useSidebarCollapsed } from './components/Sidebar'
+import { HOME_OF, SECTIONS, Sidebar, type Section, useSidebarCollapsed } from './components/Sidebar'
 import { Agents } from './pages/Agents'
 import { Coder } from './pages/Coder'
 import { Computers } from './pages/Computers'
@@ -22,15 +22,6 @@ export interface ServerState {
 }
 
 const ALL_SECTIONS: readonly Section[] = [...SECTIONS, 'Settings']
-
-/** Where each runnable agent lives. */
-const HOME_OF: Record<string, Section> = {
-  coder: 'Coder',
-  designer: 'Design',
-  researcher: 'Research',
-  'deep-research': 'Research',
-  reviewer: 'Review'
-}
 
 const DESIGNING =
   /\b(design|redesign|mock ?up|wireframe|poster|banner|flyer|logo|landing page|ui for|screen for)\b/i
@@ -129,6 +120,20 @@ export default function App(): React.JSX.Element {
     setSection(home)
   }
 
+  /** From the sidebar: back to the agent's workspace as it was left. */
+  const chatWith = (id: string): void => {
+    const home = HOME_OF[id]
+    if (!home) return
+    if (home === 'Research') {
+      const research = useResearch.getState()
+      if ((research.session?.agent_id ?? research.agentId) !== id) {
+        research.newSession()
+        research.setAgent(id)
+      }
+    }
+    setSection(home)
+  }
+
   const searchReady = server.health?.search.configured ?? true
 
   return (
@@ -137,8 +142,8 @@ export default function App(): React.JSX.Element {
       <Sidebar
         section={section}
         onSelect={setSection}
-        server={server}
-        onRecheck={refresh}
+        agents={agents}
+        onChat={chatWith}
         collapsed={collapsed}
         onToggle={toggleSidebar}
       />

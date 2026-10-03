@@ -80,11 +80,9 @@ body:has(.splitter.is-dragging) .design {
 .design-history h5,
 .dz-palette h5 {
   margin: 6px 8px 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .design-history-row {
