@@ -1729,6 +1729,7 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "composio" },
     { name = "composio-langchain" },
+    { name = "contree-sdk", extra = ["langchain"] },
     { name = "deepagents" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -1742,11 +1743,6 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 
-[package.optional-dependencies]
-sandbox = [
-    { name = "contree-sdk", extra = ["langchain"] },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -1758,7 +1754,7 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.15.0" },
     { name = "composio", specifier = ">=0.22.0" },
     { name = "composio-langchain", specifier = ">=0.25.0" },
-    { name = "contree-sdk", extras = ["langchain"], marker = "extra == 'sandbox'" },
+    { name = "contree-sdk", extras = ["langchain"], specifier = ">=0.3.6" },
     { name = "deepagents", specifier = ">=0.7" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
@@ -1771,7 +1767,6 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
-provides-extras = ["sandbox"]
 
 [package.metadata.requires-dev]
 dev = [

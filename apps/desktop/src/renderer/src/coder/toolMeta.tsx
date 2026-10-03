@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Bot,
+  Brain,
   ClipboardCheck,
   Eye,
   FileCode,
@@ -173,6 +174,10 @@ export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta 
       return { icon: <ScanEye />, verb: 'Review', target: s(args.brief) }
     case 'task':
       return { icon: <Bot />, verb: 'Delegate', target: s(args.subagent_type) }
+    case 'remember':
+      return { icon: <Brain />, verb: 'Remember', target: s(args.fact) }
+    case 'forget':
+      return { icon: <Brain />, verb: 'Forget', target: s(args.memory_id) }
     default:
       return { icon: <Wrench />, verb: name, target: '' }
   }

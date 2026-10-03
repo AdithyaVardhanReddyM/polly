@@ -1,0 +1,766 @@
+/* ---------- the agent builder ----------
+ * A form on the left; on the right a quiet stage where the agent's ID card
+ * hangs. */
+
+.builder {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.builder-form {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  background: var(--bg);
+}
+
+.builder-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 52px;
+  padding: 0 20px 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.builder-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--faint);
+}
+
+.builder-crumbs .link {
+  color: var(--muted);
+}
+
+.builder-crumbs b {
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.builder-delete {
+  border-color: transparent;
+  background: none;
+  color: var(--down);
+}
+
+.builder-delete:hover:not(:disabled) {
+  background: var(--error-bg);
+}
+
+.builder-form > .banner {
+  margin: 0 32px 8px;
+}
+
+.builder-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 40px 56px;
+  scrollbar-gutter: stable;
+}
+
+.builder-body > * {
+  width: 100%;
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* the opening line */
+
+.builder-intro {
+  margin-bottom: 18px;
+}
+
+.builder-intro h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.builder-intro p {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+/* "write it for me": a composer, not a field */
+
+.idea {
+  position: relative;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--field-shadow);
+  transition: box-shadow 0.15s;
+  overflow: hidden;
+}
+
+.idea:hover {
+  box-shadow: var(--field-shadow-hover);
+}
+
+.idea:focus-within {
+  box-shadow: var(--field-shadow-focus);
+}
+
+.idea textarea {
+  display: block;
+  width: 100%;
+  padding: 14px 16px 4px;
+  border: none;
+  background: none;
+  outline: none;
+  resize: none;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.idea textarea::placeholder {
+  color: var(--faint);
+}
+
+.idea-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 10px 14px;
+}
+
+.idea-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.idea-chips button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background: var(--sidebar);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+}
+
+.idea-chips button:hover {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+}
+
+.idea .btn-primary {
+  height: 32px;
+}
+
+/* while the model writes, a band of light crosses the box */
+.idea.is-drafting::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--brand) 22%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  animation: idea-sweep 1.3s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes idea-sweep {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+/* parts: what it is on the left, its controls on the right */
+
+.part {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 8px 32px;
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+}
+
+.idea + .part {
+  margin-top: 28px;
+}
+
+.part-head h2 {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.part-head p {
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.part-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+@container (max-width: 640px) {
+  .part {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .builder-body {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
+/* fields: filled, no outline until they have focus */
+
+.builder {
+  /* white, lifted off the page by a soft shadow rather than an outline */
+  --field-shadow: 0 1px 3px rgba(28, 27, 34, 0.07), 0 4px 12px rgba(28, 27, 34, 0.05);
+  --field-shadow-hover: 0 2px 4px rgba(28, 27, 34, 0.08), 0 8px 20px rgba(28, 27, 34, 0.08);
+  /* focus: a soft brand glow, no hard ring */
+  --field-shadow-focus: 0 2px 4px rgba(144, 122, 214, 0.18), 0 8px 24px rgba(144, 122, 214, 0.24);
+}
+
+:root[data-theme='dark'] .builder {
+  --field-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.3);
+  --field-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.5), 0 8px 20px rgba(0, 0, 0, 0.4);
+  --field-shadow-focus: 0 2px 4px rgba(160, 140, 228, 0.25), 0 8px 24px rgba(160, 140, 228, 0.3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field > label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.field > label span {
+  font-weight: 400;
+  color: var(--faint);
+}
+
+.field > label .count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--field-shadow);
+  outline: none;
+  font-size: 13.5px;
+  line-height: 1.5;
+  transition: box-shadow 0.15s;
+}
+
+.field input.is-name {
+  font-weight: 600;
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 62px;
+}
+
+.field input:hover,
+.field textarea:hover,
+.prompt-box:hover,
+.model-field:hover {
+  box-shadow: var(--field-shadow-hover);
+}
+
+.field input:focus,
+.field textarea:focus,
+.prompt-box:focus-within,
+.model-field.is-open,
+.model-field:focus-visible {
+  box-shadow: var(--field-shadow-focus);
+}
+
+.field ::placeholder,
+.prompt-box ::placeholder {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 12px;
+}
+
+/* instructions: a sheet with a footer */
+
+.prompt-box {
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--field-shadow);
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+
+.prompt-box textarea {
+  display: block;
+  width: 100%;
+  min-height: 240px;
+  padding: 14px 16px;
+  border: none;
+  background: none;
+  outline: none;
+  resize: vertical;
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.prompt-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px 10px;
+  font-size: 12px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the model: the picker the prompt bars use, opened from a field */
+
+.model-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--field-shadow);
+  outline: none;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+
+.model-field .menu-text b {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.model-field > svg:last-child {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--faint);
+}
+
+/* Below the field, the list on top and its facts card level with it. */
+.part .popover-panel .model-picker {
+  align-items: flex-start;
+}
+
+@container (max-width: 860px) {
+  .part .popover-panel .model-card {
+    display: none;
+  }
+}
+
+/* abilities: one card each, switch on the right */
+
+.abilities {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ability {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.ability:hover:not(.is-disabled) {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.ability.is-on {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+}
+
+.ability.is-disabled {
+  cursor: default;
+}
+
+.ability-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    filter 0.15s,
+    opacity 0.15s;
+}
+
+.ability-icon.is-research {
+  background: var(--research-bg);
+  color: var(--research-ink);
+}
+
+.ability-icon.is-coding {
+  background: var(--coding-bg);
+  color: var(--coding-ink);
+}
+
+.ability-icon.is-custom {
+  background: var(--custom-bg);
+  color: var(--custom-ink);
+}
+
+/* off: the icon goes quiet with the switch */
+.ability:not(.is-on) .ability-icon {
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+
+.ability-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.ability-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ability-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ability-title b {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ability-by {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.ability-by.is-missing {
+  color: var(--warn-ink);
+}
+
+.ability-detail {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* apps: the cards of the Integrations page, here to add or leave out */
+
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.app-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.app-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.app-card.is-on {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+}
+
+.app-card .ig-card-title b {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.app-card:hover .ig-connect:not(.is-live) {
+  background: var(--brand);
+  color: #fff;
+}
+
+.app-card-desc {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.app-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.app-empty svg {
+  width: 16px;
+  height: 16px;
+}
+
+.builder-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+}
+
+.builder-link svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* the stage */
+
+.builder-stage {
+  flex: none;
+  width: clamp(320px, 36%, 480px);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--line);
+  /* a step darker than the page, so the card's white face stands off it */
+  background: color-mix(in srgb, var(--ink) 7%, var(--bg));
+}
+
+/* a field of dots, fading towards the edges */
+.builder-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(color-mix(in srgb, var(--ink) 16%, transparent) 1px, transparent 1.2px);
+  background-size: 18px 18px;
+  mask-image: radial-gradient(80% 65% at 50% 45%, #000 25%, transparent 100%);
+  pointer-events: none;
+}
+
+.lanyard {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  /* the canvas takes the drag; the page must not scroll or select under it */
+  touch-action: none;
+  user-select: none;
+}
+
+.builder-stage-foot {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.builder-stage-foot span {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.builder-flat {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.builder-flat b {
+  margin-top: 8px;
+  font-size: 17px;
+}
+
+.builder-flat span {
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .builder-stage {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .idea.is-drafting::after {
+    animation: none;
+  }
+}
+
+/* ---------- chatting with a custom agent ---------- */
+
+.chat-abilities {
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.chat-abilities span {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+/* files an agent saved in its sandbox, shown in its reply */
+
+.md .md-output {
+  display: block;
+  margin: 10px 0;
+}
+
+.md .md-output img,
+.md img {
+  display: block;
+  max-width: min(100%, 640px);
+  max-height: 520px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+
+.md .md-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.md .md-file:hover {
+  background: var(--sidebar);
+}
+
+.md .md-file svg {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.md-output-missing {
+  color: var(--faint);
+}
+
+/* ---------- memory, in Settings ---------- */
+
+.memory-add {
+  gap: 10px;
+}
+
+.memory-add input {
+  width: 100%;
+  padding: 8px 11px;
+  border: none;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink) 5%, var(--surface));
+  outline: none;
+  font-size: 13.5px;
+}
+
+.memory-add input:focus {
+  background: var(--surface);
+  box-shadow: var(--field-shadow-focus);
+}
+
+.memory-add ::placeholder {
+  color: var(--faint);
+}
+
+.memory-text {
+  font-weight: 400;
+  line-height: 1.45;
+}

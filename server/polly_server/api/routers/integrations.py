@@ -56,7 +56,7 @@ def _list(fresh: bool) -> Integrations:
     connections = composio.connections(fresh=fresh)
     counts = composio.tool_counts()
     users: dict[str, list[str]] = {}
-    for agent in agents.CATALOG:
+    for agent in agents.everyone():
         if not builders.listed(agent):
             continue
         for slug in assignments.enabled(agent.id):

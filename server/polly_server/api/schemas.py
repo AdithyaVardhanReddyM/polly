@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from polly_server.agents import builders
+from polly_server.agents.custom import CustomAgent
 from polly_server.agents.spec import AgentSpec, Division, Runtime, Status
 from polly_server.coder.context import Mode
 from polly_server.coder.permissions import Rule
@@ -29,6 +31,14 @@ class AgentSummary(BaseModel):
     subagents: list[str]
     computer: bool
     avatar: dict[str, str]
+    # Made by the user: can be edited and deleted.
+    custom: bool
+    # Runs code in a sandbox.
+    sandbox: bool
+    # Reads and adds to the shared memory about the user.
+    memory: bool
+    # The model a new conversation starts on.
+    model: str
 
     @classmethod
     def of(cls, spec: AgentSpec) -> AgentSummary:
@@ -45,11 +55,81 @@ class AgentSummary(BaseModel):
             subagents=[s.name for s in spec.subagents],
             computer=spec.computer,
             avatar={"seed": spec.id, **spec.avatar},
+            custom=spec.division == "custom",
+            sandbox=spec.sandbox,
+            memory=spec.memory,
+            model=builders.default_model(spec.id),
         )
 
 
 class AgentList(BaseModel):
     agents: list[AgentSummary]
+
+
+class AgentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    tagline: str = Field(default="", max_length=80)
+    description: str = Field(default="", max_length=400)
+    system_prompt: str = Field(default="", max_length=20_000)
+    model: str = ""
+    search: bool = True
+    sandbox: bool = False
+    memory: bool = True
+    avatar: dict[str, str] = Field(default_factory=dict)
+    integrations: list[str] = Field(default_factory=list, max_length=100)
+
+
+class AgentPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=40)
+    tagline: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=400)
+    system_prompt: str | None = Field(default=None, max_length=20_000)
+    model: str | None = None
+    search: bool | None = None
+    sandbox: bool | None = None
+    memory: bool | None = None
+    avatar: dict[str, str] | None = None
+    integrations: list[str] | None = Field(default=None, max_length=100)
+
+
+class AgentConfig(CustomAgent):
+    """A custom agent as the builder edits it."""
+
+    integrations: list[str]
+
+    @classmethod
+    def of(cls, agent: CustomAgent) -> AgentConfig:
+        return cls(**agent.model_dump(), integrations=list(assignments.enabled(agent.id)))
+
+
+class AgentDraftIn(BaseModel):
+    description: str = Field(min_length=3, max_length=2_000)
+
+
+class AgentDraft(BaseModel):
+    """A first version of an agent, written by a model from one sentence."""
+
+    name: str
+    tagline: str
+    description: str
+    system_prompt: str
+    search: bool
+    sandbox: bool
+
+
+class MemoryIn(BaseModel):
+    text: str = Field(min_length=1, max_length=400)
+
+
+class MemoryOut(BaseModel):
+    id: str
+    text: str
+    source: str
+    created_at: float
+
+
+class MemoryList(BaseModel):
+    memories: list[MemoryOut]
 
 
 class Provider(BaseModel):

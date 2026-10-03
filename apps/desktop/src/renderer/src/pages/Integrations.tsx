@@ -328,7 +328,7 @@ function useResolvedTheme(): 'light' | 'dark' {
 }
 
 /** The app's logo, served by the agent server; a letter until it loads or if it cannot. */
-function Logo({
+export function Logo({
   slug,
   name,
   base,

@@ -13,8 +13,9 @@ import { fromWire, reduce, type RunState, type TranscriptItem } from './coder'
 
 /**
  * A chat with one of the agents that run without a project: the Researcher,
- * Deep Research, the Reviewer, and the change research a Coder run hands off.
- * Each page gets its own store from `createAgentStore`.
+ * Deep Research, the Reviewer, the change research a Coder run hands off, and
+ * the agents people make themselves. Each page gets its own store from
+ * `createAgentStore`.
  */
 export interface AgentSessionState {
   /** The agents this store lists sessions for; the first is the default. */
@@ -38,6 +39,8 @@ export interface AgentSessionState {
   boot: () => Promise<void>
   refresh: () => Promise<void>
   setAgent: (id: string) => void
+  /** Replace the agents this store covers (custom agents come and go). */
+  setAgentIds: (ids: string[]) => void
   newSession: () => void
   open: (id: string) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -142,7 +145,7 @@ export function createAgentStore({ agentIds, hash, onEvent, beforeSend }: Option
 
     return {
       agentIds,
-      agentId: agentIds[0],
+      agentId: agentIds[0] ?? '',
       sessions: [],
       sessionId: null,
       session: null,
@@ -165,12 +168,14 @@ export function createAgentStore({ agentIds, hash, onEvent, beforeSend }: Option
 
       async refresh() {
         if (!hash) return // change research is listed by its Coder session
-        const lists = await Promise.all(agentIds.map((id) => api.sessions.list(id)))
+        const ids = get().agentIds
+        const lists = await Promise.all(ids.map((id) => api.sessions.list(id)))
         const failed = lists.find((r) => !r.ok)
         if (failed && !failed.ok) {
           set({ error: failed.error })
           return
         }
+        if (get().agentIds !== ids) return // the agents changed while this was loading
         const sessions = lists
           .flatMap((r) => (r.ok ? r.data : []))
           .sort((a, b) => b.updated_at - a.updated_at)
@@ -179,7 +184,18 @@ export function createAgentStore({ agentIds, hash, onEvent, beforeSend }: Option
       },
 
       setAgent(id) {
-        if (agentIds.includes(id)) set({ agentId: id })
+        if (get().agentIds.includes(id)) set({ agentId: id })
+      },
+
+      setAgentIds(ids) {
+        const current = get().agentIds
+        if (ids.length === current.length && ids.every((id, i) => id === current[i])) return
+        const agentId = ids.includes(get().agentId) ? get().agentId : (ids[0] ?? '')
+        set({ agentIds: ids, agentId })
+        // The open conversation belonged to an agent that is gone.
+        const open = get().session
+        if (open && !ids.includes(open.agent_id)) get().newSession()
+        void get().refresh()
       },
 
       newSession() {
@@ -208,7 +224,9 @@ export function createAgentStore({ agentIds, hash, onEvent, beforeSend }: Option
           items.push({ kind: 'notice', id: 'last-error', tone: 'error', text: t.session.last_error })
         set({
           session: t.session,
-          agentId: agentIds.includes(t.session.agent_id) ? t.session.agent_id : get().agentId,
+          agentId: get().agentIds.includes(t.session.agent_id)
+            ? t.session.agent_id
+            : get().agentId,
           items,
           run: t.run_id ? 'running' : 'idle',
           ...(artifacts.ok
@@ -288,6 +306,9 @@ export const useResearch = createAgentStore({
 })
 
 export const useReview = createAgentStore({ agentIds: ['reviewer'], hash: 'review' })
+
+/** Conversations with custom agents; `App` keeps its agents in step with the server. */
+export const useChat = createAgentStore({ agentIds: [], hash: 'chat' })
 
 /** Change research for the open Coder session, shown in the Inspector. */
 export const useChangeResearch = createAgentStore({ agentIds: ['change-research'], hash: null })

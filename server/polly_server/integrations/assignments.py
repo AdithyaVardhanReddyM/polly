@@ -2,8 +2,8 @@
 
 A built-in agent starts with the ones its spec names (`AgentSpec.integrations`).
 The user can change that set from the Integrations page; the change is kept in
-`<data_dir>/integrations.json` and wins over the spec. Custom agents will
-store their choice the same way.
+`<data_dir>/integrations.json` and wins over the spec. Custom agents keep
+their choice here too, set when they are made or edited.
 """
 
 from __future__ import annotations
@@ -49,6 +49,14 @@ def set_enabled(agent_id: str, slugs: list[str]) -> tuple[str, ...]:
         saved[agent_id] = list(dict.fromkeys(slugs))
         _file().write_text(json.dumps({"agents": saved}, indent=2))
     return enabled(agent_id)
+
+
+def clear(agent_id: str) -> None:
+    """Forget an agent's choice, for an agent that was deleted."""
+    with _lock:
+        saved = _saved()
+        if saved.pop(agent_id, None) is not None:
+            _file().write_text(json.dumps({"agents": saved}, indent=2))
 
 
 def active(agent_id: str) -> tuple[str, ...]:

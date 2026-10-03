@@ -1,9 +1,12 @@
 """The built-in agents. Coder, Designer, Reviewer, Researcher and Deep Research run
 today; the rest are declared only. `change-research` is internal: it runs
-after a Coder session and is not listed as an agent of its own."""
+after a Coder session and is not listed as an agent of its own.
+
+`get` and `everyone` also answer for the agents people made (`custom.py`)."""
 
 from __future__ import annotations
 
+from polly_server.agents import custom
 from polly_server.agents.spec import AgentSpec, SubagentSpec
 from polly_server.coder.prompt import (
     EXPLORER_PROMPT,
@@ -215,6 +218,7 @@ CATALOG: tuple[AgentSpec, ...] = (
         system_prompt=CHANGE_RESEARCH_PROMPT,
         tools=(*RESEARCH, "submit_change_report"),
         subagents=(SCOUT,),
+        memory=False,
         metadata={"internal": "true"},
     ),
     # ---------- everyday ----------
@@ -282,4 +286,10 @@ CATALOG: tuple[AgentSpec, ...] = (
 
 
 def get(agent_id: str) -> AgentSpec | None:
-    return next((a for a in CATALOG if a.id == agent_id), None)
+    built_in = next((a for a in CATALOG if a.id == agent_id), None)
+    return built_in or custom.spec(agent_id)
+
+
+def everyone() -> tuple[AgentSpec, ...]:
+    """The built-in agents, then the user's own, oldest first."""
+    return (*CATALOG, *custom.specs())

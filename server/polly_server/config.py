@@ -60,6 +60,7 @@ class Settings:
 
     @property
     def sandbox_configured(self) -> bool:
+        # ConTree signs in with the Token Factory key and the Nebius project.
         if self.sandbox_provider == "contree":
             return bool(self.nebius_api_key and self.nebius_project_id)
         return False

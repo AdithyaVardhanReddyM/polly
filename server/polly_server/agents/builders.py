@@ -1,10 +1,13 @@
 """Assembling the agents that are not the Coder: Researcher, Deep Research,
-Reviewer and the change research that follows a Coder run.
+Reviewer, the change research that follows a Coder run, and the agents
+people make themselves.
 
 None of them touch the user's disk. Deep agents keep their scratch files in
-graph state (the Deep Agents default backend), and the only tools they get
-are read-only (web, GitHub) plus the one that hands in their result, and the
-apps the user connected and allowed them (`integrations/`).
+graph state (the Deep Agents default backend), or in a ConTree sandbox when
+the agent runs code (`sandbox.py`). The only tools they get are read-only
+(web, GitHub) plus the one that hands in their result, the apps the user
+connected and allowed them (`integrations/`), and the shared memory
+(`memory.py`).
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ import datetime as dt
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from polly_server import memory, model_registry, sandbox
 from polly_server import tools as tool_registry
 from polly_server.agents import catalog, runtime
 from polly_server.agents.spec import AgentSpec
@@ -36,6 +40,8 @@ _cache: dict[tuple[Any, ...], CompiledStateGraph] = {}
 
 def default_model(agent_id: str) -> str:
     spec = catalog.get(agent_id)
+    if spec and spec.model and model_registry.known(spec.model):
+        return spec.model
     return tier_model(spec.model_tier if spec else "default")
 
 
@@ -58,10 +64,14 @@ def _resolve(spec: AgentSpec, apps: tuple[str, ...]) -> AgentSpec:
     """Drop tools that are not configured (no Tavily key: no web tools), so a
     missing integration degrades the agent instead of breaking it."""
     subagents = tuple(replace(s, tools=tool_registry.available(s.tools)) for s in spec.subagents)
-    prompt = _dated(spec.system_prompt, sources=spec.id != "designer")
+    tools = tool_registry.available(spec.tools)
+    searches = bool(tools) if spec.division == "custom" else spec.id != "designer"
+    prompt = _dated(spec.system_prompt, sources=searches)
+    if spec.sandbox and sandbox.available():
+        prompt = f"{prompt}\n\n{sandbox.PROMPT}"
     return replace(
         spec,
-        tools=tool_registry.available(spec.tools),
+        tools=tools,
         subagents=subagents,
         system_prompt=with_apps(prompt, apps),
     )
@@ -85,10 +95,11 @@ def build_agent(
     if spec is None or spec.status != "ready" or spec.id == "coder":
         raise LookupError(f"{session.agent_id!r} is not an agent Polly can run here")
 
-    # Connecting an app or changing what the agent may use rebuilds it on the
-    # next turn.
+    # Connecting an app, changing what the agent may use or editing a custom
+    # agent rebuilds it on the next turn.
     apps = assignments.active(spec.id)
-    key = (session.id, session.model, dt.date.today().isoformat(), apps)
+    made_as = (spec.system_prompt, spec.tools, spec.sandbox, spec.memory)
+    key = (session.id, session.model, dt.date.today().isoformat(), apps, made_as)
     if use_cache and key in _cache:
         return _cache[key]
 
@@ -99,7 +110,10 @@ def build_agent(
         "checkpointer": checkpointer or get_checkpointer(),
         # Same shape as the Coder's: the run passes one context to every agent.
         "context_schema": CoderContext,
+        "middleware": [memory.middleware(spec.id)] if spec.memory else [],
     }
+    if spec.sandbox and sandbox.available():
+        options["backend"] = sandbox.for_session(session.id)
 
     if spec.runtime == "deep":
         from langchain.agents.middleware import TodoListMiddleware
@@ -115,7 +129,7 @@ def build_agent(
                 made[name] = chat_model(name)  # type: ignore[arg-type]
             return made[name]
 
-        options["middleware"] = [TodoListMiddleware()]
+        options["middleware"] = [TodoListMiddleware(), *options["middleware"]]
         options["subagent_overrides"] = {
             s.name: {"model": tier(SUBAGENT_TIERS[s.name])}
             for s in spec.subagents

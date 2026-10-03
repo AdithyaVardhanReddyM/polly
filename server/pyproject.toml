@@ -19,11 +19,9 @@ dependencies = [
     "beautifulsoup4>=4.15.0",
     "composio>=0.22.0",
     "composio-langchain>=0.25.0",
+    # Nebius ConTree sandboxes: where agents run code.
+    "contree-sdk[langchain]>=0.3.6",
 ]
-
-[project.optional-dependencies]
-# Nebius ConTree sandboxes: per-agent code execution and computers.
-sandbox = ["contree-sdk[langchain]"]
 
 [project.scripts]
 polly-server = "polly_server.__main__:main"

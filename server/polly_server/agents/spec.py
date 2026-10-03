@@ -53,7 +53,15 @@ class AgentSpec:
     skills: tuple[str, ...] = ()
     # Whether the agent gets its own virtual desktop, not just a code sandbox.
     computer: bool = False
+    # Whether the agent can run code in a sandbox (`sandbox.py`): its file
+    # tools and its shell then work inside the sandbox.
+    sandbox: bool = False
+    # Whether it reads and adds to what Polly remembers about the user
+    # (`memory.py`).
+    memory: bool = True
     model_tier: Literal["default", "fast", "strong"] = "default"
+    # A model id that wins over the tier: what a custom agent was made with.
+    model: str = ""
     # DiceBear "voxel-bot" options (eyesVariant, topVariant, chestVariant,
     # mouthVariant, bodyColor, glowColor…). The seed defaults to the agent id,
     # so an agent with no overrides still gets a stable, unique robot.

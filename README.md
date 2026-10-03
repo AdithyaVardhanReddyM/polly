@@ -43,15 +43,17 @@ Agents are grouped into divisions. The first set:
 
 ### Your own agents
 
-Anyone can create an agent from the app by giving it:
+**Agents → New agent** opens the builder. An agent of your own is:
 
-- **Instructions** — a system prompt describing the job and how to do it
-- **Skills** — reusable, on-demand playbooks (`SKILL.md` folders)
-- **Knowledge** — documents and links the agent can search
-- **Tools and integrations** — GitHub, Gmail, Google Calendar, Slack, Notion, Linear, Google Drive, web search, and more
-- **Subagents** — specialists it can hand parts of a task to
-- **A computer** — whether it needs a full desktop, or just a sandbox to run code
-- **A face** — every agent gets its own robot avatar, generated from its id or customised (eyes, antenna, chest, colours)
+- **A name, a tagline and instructions.** Write them yourself, or describe the agent in a sentence and let Nemotron draft all three (*Write it for me*); everything stays editable.
+- **A model.** Any model in the catalog, or Polly's default.
+- **Web search.** Tavily search and page reading, with numbered citations and a sources panel.
+- **A code sandbox.** The agent gets its own Nebius ConTree sandbox with Python and the usual data libraries. It writes and runs code there, and the charts and files it saves under `/outputs` show up in its replies.
+- **Memory.** It knows what Polly remembers about you and adds to it.
+- **Apps.** Any of the accounts you connected on the Integrations page.
+- **A face.** Every agent gets its own robot; shuffle until you like it. While you build, the agent's ID card hangs beside the form and updates as you type.
+
+Your agents appear in the sidebar next to the built-in ones, each with its own conversations, and can be edited or deleted at any time. Skills, knowledge files, subagents and a full desktop for custom agents come next.
 
 ### Every agent gets a computer
 
@@ -64,7 +66,7 @@ Sandboxes are provisioned on Nebius ([ConTree](https://docs.tokenfactory.nebius.
 
 ### Memory and approvals
 
-Agents keep long-term memory per agent and per user (preferences, past decisions, project context), and short-term working files per task. Anything with side effects — sending an email, merging a PR, booking a meeting — is paused for your approval.
+Polly keeps one memory about you, shared by every agent: short facts such as your name, what you work on and how you like things done. An agent saves a fact when you tell it something that will matter later, and every agent sees it from its next turn on, so what you told the Researcher the Coder knows too. **Settings → Memory** lists what is remembered, who saved it, and lets you add or delete entries. The Coder also keeps a notebook per project, and every task has its own working files. Anything with side effects — sending an email, merging a PR, booking a meeting — is paused for your approval.
 
 ## The Coder
 
@@ -132,7 +134,7 @@ Public PRs work without signing in, within GitHub's anonymous rate limit. To rev
 The **Integrations** page connects your apps through [Composio](https://composio.dev): Gmail, Google Calendar, Docs, Sheets, Slides, Drive, Meet and Maps, YouTube, Notion, Linear, Jira, Slack, GitHub, Sentry, Supabase, Neon, PostHog, Stripe, LinkedIn, Hacker News, Apollo and more. Set `COMPOSIO_API_KEY` in `.env` to turn it on.
 
 - **Connecting** opens the provider's sign-in page in your browser (or a Composio page for apps that use an API key). Tokens and keys stay with Composio and are never stored on this machine.
-- **Each agent gets only the apps you allow.** Open an app to choose which agents may use it. Built-in agents start with sensible defaults (the Coder with GitHub, Linear and Sentry; the Researcher with Hacker News and YouTube), and custom agents will pick from the same list.
+- **Each agent gets only the apps you allow.** Open an app to choose which agents may use it. Built-in agents start with sensible defaults (the Coder with GitHub, Linear and Sentry; the Researcher with Hacker News and YouTube), and custom agents pick from the same list in the builder.
 - **Agents stay light.** An agent does not carry every tool of every app. It gets a Composio session scoped to its apps, searches for the tool it needs and runs it.
 - **Acting needs your say.** Agents may read freely, and are told to ask before anything that sends, posts, pays or deletes. In the Coder, running an app tool goes through the same approval cards as commands.
 - X (Twitter) has no shared sign-in: create an auth config for it with your own OAuth app in the Composio dashboard first.
@@ -187,11 +189,11 @@ Each agent declares how it runs, and Polly uses the lightest runtime that can do
 
 | Runtime | Built with | Use it for | Agents |
 | --- | --- | --- | --- |
-| `deep` | LangChain **Deep Agents** | Long-running, multi-step work that needs planning, a file system, subagents, skills, long-term memory and a sandbox | Coder, Designer, Reviewer, Deep Research, Operator |
-| `agent` | LangChain **`create_agent`** | Quick, bounded tasks: a model calling tools in a loop | Researcher, Inbox, Calendar, most custom agents |
+| `deep` | LangChain **Deep Agents** | Long-running, multi-step work that needs planning, a file system, subagents, skills, long-term memory and a sandbox | Coder, Reviewer, Deep Research, Operator, custom agents with a sandbox |
+| `agent` | LangChain **`create_agent`** | Quick, bounded tasks: a model calling tools in a loop | Researcher, Designer, Inbox, Calendar, custom agents without a sandbox |
 | `graph` | Hand-written **LangGraph** graphs | Flows whose steps are fixed in code: routing a task to the right agent, approval flows, scheduled routines | Internal flows |
 
-Custom agents start on `agent`. Turning on "long-running" (or giving the agent subagents or a computer) moves it to `deep`. The dispatch lives in [`server/polly_server/agents/runtime.py`](server/polly_server/agents/runtime.py).
+Custom agents start on `agent`. Giving one a code sandbox moves it to `deep`, with the sandbox as its Deep Agents backend: its file tools and its shell then work inside the sandbox. The dispatch lives in [`server/polly_server/agents/runtime.py`](server/polly_server/agents/runtime.py).
 
 ### Repository layout
 
@@ -274,7 +276,10 @@ npm run typecheck           # TypeScript
 - [x] Reviewer: score a GitHub PR, post the score as a comment after a preview
 - [x] Integrations through Composio: 45+ apps, connected once and allowed per agent
 - [ ] Coder cloud sessions in sandboxes, with GitHub (push and pull requests)
-- [ ] Agent builder: instructions, skills, knowledge, tools
+- [x] Agent builder: instructions drafted by Nemotron, model, web search, apps
+- [x] Code sandboxes on Nebius ConTree for custom agents, with charts and files shown in chat
+- [x] One memory about the user, shared by every agent
+- [ ] Skills, knowledge files and subagents for custom agents
 - [ ] Virtual desktops for computer-use agents
 - [ ] Approvals for every agent's actions with side effects
 - [ ] Web app

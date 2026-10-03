@@ -6,22 +6,23 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from polly_server import __version__, persistence
-from polly_server.agents import builders, catalog
-from polly_server.api.routers import design, integrations, models, projects, reviews, sessions
-from polly_server.api.schemas import (
-    AgentIntegrationsIn,
-    AgentList,
-    AgentSummary,
-    Health,
-    ModelInfo,
-    Provider,
+from polly_server import __version__, persistence, sandbox
+from polly_server.api.routers import (
+    agents,
+    design,
+    integrations,
+    memory,
+    models,
+    projects,
+    reviews,
+    sessions,
 )
+from polly_server.api.schemas import Health, ModelInfo, Provider
 from polly_server.config import settings
-from polly_server.integrations import assignments, composio
+from polly_server.integrations import composio
 
 
 @asynccontextmanager
@@ -45,6 +46,8 @@ app.add_middleware(
 )
 
 app.include_router(models.router)
+app.include_router(agents.router)
+app.include_router(memory.router)
 app.include_router(projects.router)
 app.include_router(sessions.router)
 app.include_router(design.router)
@@ -66,35 +69,9 @@ def health() -> Health:
             provider="Nebius ConTree"
             if settings.sandbox_provider == "contree"
             else settings.sandbox_provider,
-            configured=settings.sandbox_configured,
+            configured=sandbox.available(),
         ),
         search=Provider(provider="Tavily", configured=bool(settings.tavily_api_key)),
         github=Provider(provider="GitHub", configured=composio.is_connected("github")),
         composio=Provider(provider="Composio", configured=composio.configured()),
     )
-
-
-@app.get("/agents", response_model=AgentList)
-def list_agents() -> AgentList:
-    return AgentList(agents=[AgentSummary.of(a) for a in catalog.CATALOG if builders.listed(a)])
-
-
-@app.get("/agents/{agent_id}", response_model=AgentSummary)
-def get_agent(agent_id: str) -> AgentSummary:
-    spec = catalog.get(agent_id)
-    if spec is None or not builders.listed(spec):
-        raise HTTPException(status_code=404, detail=f"no agent named {agent_id!r}")
-    return AgentSummary.of(spec)
-
-
-@app.put("/agents/{agent_id}/integrations", response_model=AgentSummary)
-def set_agent_integrations(agent_id: str, body: AgentIntegrationsIn) -> AgentSummary:
-    """Choose which connected apps an agent may use."""
-    spec = catalog.get(agent_id)
-    if spec is None or not builders.listed(spec):
-        raise HTTPException(status_code=404, detail=f"no agent named {agent_id!r}")
-    try:
-        assignments.set_enabled(agent_id, body.integrations)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
-    return AgentSummary.of(spec)

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AgentSummary, ServerHealth } from '../../shared/contracts'
 import { api } from './api'
-import { HOME_OF, SECTIONS, Sidebar, type Section, useSidebarCollapsed } from './components/Sidebar'
+import { homeOf, SECTIONS, Sidebar, type Section, useSidebarCollapsed } from './components/Sidebar'
 import { Agents } from './pages/Agents'
+import { Builder } from './pages/Builder'
+import { Chat } from './pages/Chat'
 import { Coder } from './pages/Coder'
 import { Computers } from './pages/Computers'
 import { Design } from './pages/Design'
@@ -12,7 +14,7 @@ import { Research } from './pages/Research'
 import { PR_URL, Review } from './pages/Review'
 import { Settings } from './pages/Settings'
 import { useDesign } from './design/session'
-import { useResearch, useReview } from './store/agentSession'
+import { useChat, useResearch, useReview } from './store/agentSession'
 import { useCoder } from './store/coder'
 
 export interface ServerState {
@@ -39,6 +41,10 @@ export default function App(): React.JSX.Element {
   const [server, setServer] = useState<ServerState>({ health: null, error: null, checking: true })
   const [agents, setAgents] = useState<AgentSummary[]>([])
   const [collapsed, toggleSidebar] = useSidebarCollapsed()
+  // The custom agent open in the builder; null there means a new one.
+  const [editing, setEditing] = useState<string | null>(
+    () => window.location.hash.match(/^#builder\/([\w-]+)/)?.[1] ?? null
+  )
 
   const refresh = useCallback(async () => {
     setServer((s) => ({ ...s, checking: true }))
@@ -62,7 +68,31 @@ export default function App(): React.JSX.Element {
     }
   }, [section])
 
-  const flush = section === 'Coder' || section === 'Design' || section === 'Research' || section === 'Review'
+  // The chat workspace covers whichever agents the user has made.
+  useEffect(() => {
+    useChat.getState().setAgentIds(agents.filter((a) => a.custom).map((a) => a.id))
+  }, [agents])
+
+  const byId = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
+  const runnable = useMemo(
+    () => agents.filter((a) => a.status === 'ready' && homeOf(a)).map((a) => a.id),
+    [agents]
+  )
+
+  const flush = ['Coder', 'Design', 'Research', 'Review', 'Chat', 'Builder'].includes(section)
+
+  const build = (id: string | null): void => {
+    setEditing(id)
+    setSection('Builder')
+    window.history.replaceState(null, '', id ? `#builder/${id}` : '#builder')
+  }
+
+  /** A new conversation with one of the user's agents. */
+  const newChat = (id: string): void => {
+    useChat.getState().newSession()
+    useChat.getState().setAgent(id)
+    setSection('Chat')
+  }
 
   /** A task from Home: a PR link goes to the Reviewer, code work to the
    *  Coder, design work to the Designer, everything else to research. */
@@ -102,6 +132,11 @@ export default function App(): React.JSX.Element {
       await useDesign.getState().send(text)
       return
     }
+    if (byId.get(target)?.custom) {
+      newChat(target)
+      await useChat.getState().send(text)
+      return
+    }
     setSection('Research')
     const research = useResearch.getState()
     research.newSession()
@@ -110,8 +145,10 @@ export default function App(): React.JSX.Element {
   }
 
   const openAgent = (id: string): void => {
-    const home = HOME_OF[id]
+    const agent = byId.get(id)
+    const home = agent && homeOf(agent)
     if (!home) return
+    if (home === 'Chat') return newChat(id)
     if (id === 'designer') useDesign.getState().newSession()
     if (id === 'researcher' || id === 'deep-research') {
       useResearch.getState().newSession()
@@ -122,8 +159,18 @@ export default function App(): React.JSX.Element {
 
   /** From the sidebar: back to the agent's workspace as it was left. */
   const chatWith = (id: string): void => {
-    const home = HOME_OF[id]
+    const agent = byId.get(id)
+    const home = agent && homeOf(agent)
     if (!home) return
+    if (home === 'Chat') {
+      const chat = useChat.getState()
+      if ((chat.session?.agent_id ?? chat.agentId) !== id) {
+        // Back to the last conversation with this agent, if there was one.
+        const last = chat.sessions.find((s) => s.agent_id === id)
+        if (last) void chat.open(last.id)
+        else newChat(id)
+      }
+    }
     if (home === 'Research') {
       const research = useResearch.getState()
       if ((research.session?.agent_id ?? research.agentId) !== id) {
@@ -151,7 +198,7 @@ export default function App(): React.JSX.Element {
         {section === 'Home' && (
           <Home
             agents={agents}
-            runnable={Object.keys(HOME_OF)}
+            runnable={runnable}
             onBrowse={() => setSection('Agents')}
             onCode={() => setSection('Coder')}
             onStart={(agentId, text) => void start(agentId, text)}
@@ -163,12 +210,46 @@ export default function App(): React.JSX.Element {
         {section === 'Review' && (
           <Review agents={agents} onConnect={() => setSection('Integrations')} />
         )}
+        {section === 'Chat' && (
+          <Chat agents={agents} server={server} onEdit={build} onCreate={() => build(null)} />
+        )}
         {section === 'Agents' && (
-          <Agents agents={agents} server={server} openable={Object.keys(HOME_OF)} onOpen={openAgent} />
+          <Agents
+            agents={agents}
+            server={server}
+            openable={runnable}
+            onOpen={openAgent}
+            onBuild={build}
+          />
+        )}
+        {section === 'Builder' && (
+          <Builder
+            key={editing ?? 'new'}
+            agentId={editing}
+            server={server}
+            onClose={() => setSection('Agents')}
+            onSaved={(agent) => {
+              // The chat store learns of a new agent now, not a render later.
+              const chat = useChat.getState()
+              chat.setAgentIds([...new Set([...chat.agentIds, agent.id])])
+              // A new agent opens ready to talk; an edited one where it was left.
+              if (editing === null) newChat(agent.id)
+              else chatWith(agent.id)
+              setSection('Chat')
+              void refresh()
+            }}
+            onDeleted={() => {
+              void refresh()
+              setSection('Agents')
+            }}
+            onConnectApps={() => setSection('Integrations')}
+          />
         )}
         {section === 'Computers' && <Computers agents={agents} server={server} />}
         {section === 'Integrations' && <Integrations agents={agents} />}
-        {section === 'Settings' && <Settings server={server} onRecheck={refresh} />}
+        {section === 'Settings' && (
+          <Settings server={server} agents={agents} onRecheck={refresh} />
+        )}
       </main>
     </div>
   )

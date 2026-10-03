@@ -1,4 +1,7 @@
 import type {
+  AgentConfig,
+  AgentDraft,
+  AgentFields,
   AgentSummary,
   Artifacts,
   Decision,
@@ -6,6 +9,7 @@ import type {
   FileContent,
   FileDiff,
   IntegrationsStatus,
+  Memory,
   ModelList,
   Project,
   ProjectMemory,
@@ -76,6 +80,14 @@ const q = (params: Record<string, string | number | undefined>): string => {
   return '?' + new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString()
 }
 
+const unwrapMemories = (res: Result<{ memories: Memory[] }>): Result<Memory[]> =>
+  res.ok ? { ok: true, data: res.data.memories } : res
+
+/** Where the app can load a file an agent saved in its sandbox (`/outputs/…`). */
+export function outputUrl(server: string, sessionId: string, path: string): string {
+  return `${server}/sessions/${sessionId}/outputs${q({ path })}`
+}
+
 export const api = {
   health: () => get<ServerHealth>('/health'),
   agents: async (): Promise<Result<AgentSummary[]>> => {
@@ -83,6 +95,26 @@ export const api = {
     return res.ok ? { ok: true, data: res.data.agents } : res
   },
   models: () => get<ModelList>('/models'),
+
+  /** The agents people make themselves. */
+  custom: {
+    create: (body: AgentFields) => post<AgentSummary>('/agents', body),
+    config: (id: string) => get<AgentConfig>(`/agents/${encodeURIComponent(id)}/config`),
+    update: (id: string, body: Partial<AgentFields>) =>
+      patch<AgentSummary>(`/agents/${encodeURIComponent(id)}`, body),
+    remove: (id: string) => del(`/agents/${encodeURIComponent(id)}`),
+    /** Has a model write the name, tagline and instructions. */
+    draft: (description: string) => postSlow<AgentDraft>('/agents/draft', { description })
+  },
+
+  memory: {
+    list: async (): Promise<Result<Memory[]>> => unwrapMemories(await get('/memory')),
+    add: async (text: string): Promise<Result<Memory[]>> =>
+      unwrapMemories(await post('/memory', { text })),
+    remove: async (id: string): Promise<Result<Memory[]>> =>
+      unwrapMemories(await request('DELETE', `/memory/${encodeURIComponent(id)}`)),
+    clear: async (): Promise<Result<Memory[]>> => unwrapMemories(await request('DELETE', '/memory'))
+  },
 
   projects: {
     list: async (): Promise<Result<Project[]>> => {

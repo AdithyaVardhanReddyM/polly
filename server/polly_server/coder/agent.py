@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from polly_server import memory
 from polly_server import tools as tool_registry
 from polly_server.agents import builders, catalog, runtime
 from polly_server.coder.changes import ChangeTracker, make_tracked_backend
@@ -104,7 +105,7 @@ def build_coder(
         model=main,
         backend=make_backend(project, session),
         memory=MEMORY_FILES,
-        middleware=[TodoListMiddleware(), PermissionMiddleware()],
+        middleware=[TodoListMiddleware(), PermissionMiddleware(), memory.middleware("coder")],
         interrupt_on=build_interrupt_on(),
         context_schema=CoderContext,
         checkpointer=checkpointer or get_checkpointer(),

@@ -14,7 +14,7 @@ import { api } from '../api'
 import mark from '../assets/polly-mark.svg'
 import { shortTime } from '../coder/toolMeta'
 import { useDesign } from '../design/session'
-import { useResearch, useReview } from '../store/agentSession'
+import { useChat, useResearch, useReview } from '../store/agentSession'
 import { useCoder } from '../store/coder'
 import { AgentAvatar } from './AgentAvatar'
 import { SidebarStage, useStageArt } from './StageArt'
@@ -25,7 +25,9 @@ export const SECTIONS = [
   'Design',
   'Research',
   'Review',
+  'Chat',
   'Agents',
+  'Builder',
   'Computers',
   'Integrations'
 ] as const
@@ -41,13 +43,18 @@ const ICONS: Record<(typeof NAV)[number] | 'Settings', React.JSX.Element> = {
   Settings: <Cog />
 }
 
-/** Where each runnable agent lives. */
-export const HOME_OF: Record<string, Section> = {
+/** Where each built-in agent that runs lives. */
+const HOME_OF: Record<string, Section> = {
   coder: 'Coder',
   designer: 'Design',
   researcher: 'Research',
   'deep-research': 'Research',
   reviewer: 'Review'
+}
+
+/** The workspace an agent opens in; the user's own agents share Chat. */
+export function homeOf(agent: Pick<AgentSummary, 'id' | 'custom'>): Section | undefined {
+  return HOME_OF[agent.id] ?? (agent.custom ? 'Chat' : undefined)
 }
 
 const COLLAPSED = 'polly.sidebar.collapsed'
@@ -91,11 +98,14 @@ function useWorking(): Record<string, string> {
   const review = useReview((s) => s.run)
   const research = useResearch((s) => s.run)
   const researching = useResearch((s) => s.session?.agent_id ?? s.agentId)
+  const chat = useChat((s) => s.run)
+  const chatting = useChat((s) => s.session?.agent_id ?? s.agentId)
   const working: Record<string, string> = {}
   if (coder !== 'idle') working.coder = coder
   if (design !== 'idle') working.designer = design
   if (review !== 'idle') working.reviewer = review
   if (research !== 'idle') working[researching] = research
+  if (chat !== 'idle') working[chatting] = chat
   return working
 }
 
@@ -106,6 +116,7 @@ function useLatest(ids: string[], working: Record<string, string>): Record<strin
   const design = useDesign((s) => s.sessions)
   const review = useReview((s) => s.sessions)
   const research = useResearch((s) => s.sessions)
+  const chat = useChat((s) => s.sessions)
   const key = ids.join(',')
   const busy = Object.keys(working).join(',')
 
@@ -124,7 +135,7 @@ function useLatest(ids: string[], working: Record<string, string>): Record<strin
     return () => {
       stale = true
     }
-  }, [key, busy, coder, design, review, research])
+  }, [key, busy, coder, design, review, research, chat])
 
   return latest
 }
@@ -162,13 +173,14 @@ export function Sidebar({
     </button>
   )
 
-  const team = agents.filter((a) => a.status === 'ready' && HOME_OF[a.id])
+  const team = agents.filter((a) => a.status === 'ready' && homeOf(a))
   const working = useWorking()
   const latest = useLatest(
     team.map((a) => a.id),
     working
   )
   const researching = useResearch((s) => s.session?.agent_id ?? s.agentId)
+  const chatting = useChat((s) => s.session?.agent_id ?? s.agentId)
   const [query, setQuery] = useState('')
   const needle = query.trim().toLowerCase()
   const shown = needle
@@ -181,8 +193,10 @@ export function Sidebar({
     : team
 
   const chat = (a: AgentSummary): React.JSX.Element => {
-    const home = HOME_OF[a.id]
-    const active = home === section && (home !== 'Research' || researching === a.id)
+    const home = homeOf(a)
+    // Research and Chat are shared by several agents: only the one on screen is active.
+    const onScreen = home === 'Research' ? researching : home === 'Chat' ? chatting : a.id
+    const active = home === section && onScreen === a.id
     const state = working[a.id]
     const last = latest[a.id]
     return (

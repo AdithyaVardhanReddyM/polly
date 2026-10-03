@@ -52,6 +52,50 @@ export interface AgentSummary {
   computer: boolean
   /** DiceBear voxel-bot options; always includes a `seed`. */
   avatar: Record<string, string>
+  /** Made by the user: can be edited and deleted. */
+  custom: boolean
+  /** Runs code in a sandbox. */
+  sandbox: boolean
+  /** Reads and adds to the shared memory about the user. */
+  memory: boolean
+  /** The model a new conversation starts on. */
+  model: string
+}
+
+/** What the builder edits. */
+export interface AgentFields {
+  name: string
+  tagline: string
+  description: string
+  system_prompt: string
+  /** A model id; empty means Polly's default. */
+  model: string
+  search: boolean
+  sandbox: boolean
+  memory: boolean
+  avatar: Record<string, string>
+  integrations: string[]
+}
+
+export interface AgentConfig extends AgentFields {
+  id: string
+  created_at: number
+  updated_at: number
+}
+
+/** A first version of an agent, written by a model from one sentence. */
+export type AgentDraft = Pick<
+  AgentFields,
+  'name' | 'tagline' | 'description' | 'system_prompt' | 'search' | 'sandbox'
+>
+
+/** One thing Polly remembers about the user; every agent sees them all. */
+export interface Memory {
+  id: string
+  text: string
+  /** The id of the agent that saved it, or `user`. */
+  source: string
+  created_at: number
 }
 
 export interface ServerHealth {
@@ -148,7 +192,7 @@ export interface Session {
   id: string
   /** The Coder's project; null for research and review sessions. */
   project_id: string | null
-  /** coder · researcher · deep-research · reviewer · change-research */
+  /** coder · researcher · deep-research · reviewer · change-research · custom-… */
   agent_id: string
   /** Set on change research started from a Coder session. */
   parent_session_id: string | null

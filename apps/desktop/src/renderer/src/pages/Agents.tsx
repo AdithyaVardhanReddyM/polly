@@ -12,16 +12,18 @@ interface Props {
   openable: string[]
   /** Open an agent's workspace, for agents that have one. */
   onOpen: (id: string) => void
+  /** Open the builder: for a new agent, or to edit one of the user's. */
+  onBuild: (id: string | null) => void
 }
 
-export function Agents({ agents, server, openable, onOpen }: Props): React.JSX.Element {
+export function Agents({ agents, server, openable, onOpen, onBuild }: Props): React.JSX.Element {
   return (
     <div className="page">
       <PageHead
         title="Agents"
         subtitle="Built-in specialists, grouped by division, and the ones you make yourself."
       >
-        <button className="btn btn-primary" disabled title="Agent builder is coming">
+        <button className="btn btn-primary" onClick={() => onBuild(null)}>
           <Plus /> New agent
         </button>
       </PageHead>
@@ -52,13 +54,14 @@ export function Agents({ agents, server, openable, onOpen }: Props): React.JSX.E
                   onOpen={
                     a.status === 'ready' && openable.includes(a.id) ? () => onOpen(a.id) : undefined
                   }
+                  onEdit={a.custom ? () => onBuild(a.id) : undefined}
                 />
               ))}
               {d.id === 'custom' && (
-                <button className="agent-card is-new" disabled>
+                <button className="agent-card is-new" onClick={() => onBuild(null)}>
                   <Plus />
                   Create an agent
-                  <small>Instructions, skills, knowledge and tools</small>
+                  <small>Instructions, a model, tools and apps</small>
                 </button>
               )}
             </div>

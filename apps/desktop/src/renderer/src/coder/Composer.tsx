@@ -243,27 +243,18 @@ function ModelPicker(): React.JSX.Element {
   const setModel = useCoder((s) => s.setModel)
   const run = useCoder((s) => s.run)
   const [open, setOpen] = useState(false)
-  const [peek, setPeek] = useState<string | null>(null)
   const current = describeModel(model, models)
-  const vendors = [...new Set(models.map((m) => m.vendor))]
-  const fastest = Math.max(0, ...models.map((m) => m.tokens_per_second ?? 0))
-  const shown = models.find((m) => m.id === peek) ?? models.find((m) => m.id === model)
-
-  const toggle = (next: boolean): void => {
-    setOpen(next)
-    setPeek(null)
-  }
 
   return (
     <Popover
       open={open}
-      onOpenChange={toggle}
+      onOpenChange={setOpen}
       trigger={
         <button
           className="chip model-chip"
           disabled={run !== 'idle'}
           title={model}
-          onClick={() => toggle(!open)}
+          onClick={() => setOpen(!open)}
         >
           <ModelLogo vendor={current.vendor} model={model} size={15} />
           <span>{model ? current.label : 'Model'}</span>
@@ -271,47 +262,72 @@ function ModelPicker(): React.JSX.Element {
         </button>
       }
     >
-      <div className="model-picker">
-        <div className="menu menu-models" onMouseLeave={() => setPeek(null)}>
-          <div className="menu-head">
-            <NebiusLogo /> Served by Nebius Token Factory
-          </div>
-          {vendors.map((v) => (
-            <div key={v} className="menu-group">
-              <div className="menu-label">{v}</div>
-              {models
-                .filter((m) => m.vendor === v)
-                .map((m) => (
-                  <button
-                    key={m.id}
-                    className={m.id === model ? 'menu-item is-active' : 'menu-item'}
-                    onMouseEnter={() => setPeek(m.id)}
-                    onFocus={() => setPeek(m.id)}
-                    onClick={() => {
-                      toggle(false)
-                      void setModel(m.id)
-                    }}
-                  >
-                    <ModelLogo vendor={m.vendor} model={m.id} size={26} />
-                    <span className="menu-text">
-                      <b>
-                        {m.label}
-                        {m.is_default && <em className="badge">Default</em>}
-                      </b>
-                      <span>
-                        {m.tokens_per_second ? `${Math.round(m.tokens_per_second)} tok/s · ` : ''}
-                        {formatTokens(m.context_window)} context
-                      </span>
-                    </span>
-                    {m.id === model && <Check className="menu-check" />}
-                  </button>
-                ))}
-            </div>
-          ))}
-        </div>
-        {shown && <ModelCard model={shown} fastest={fastest} />}
-      </div>
+      <ModelMenu
+        models={models}
+        value={model}
+        onPick={(id) => {
+          setOpen(false)
+          void setModel(id)
+        }}
+      />
     </Popover>
+  )
+}
+
+/** The model list, grouped by vendor, with a card of facts for the model
+ *  under the pointer (or the current one) beside it. Goes inside a Popover. */
+export function ModelMenu({
+  models,
+  value,
+  onPick
+}: {
+  models: ModelOption[]
+  value: string
+  onPick: (id: string) => void
+}): React.JSX.Element {
+  const [peek, setPeek] = useState<string | null>(null)
+  const vendors = [...new Set(models.map((m) => m.vendor))]
+  const fastest = Math.max(0, ...models.map((m) => m.tokens_per_second ?? 0))
+  const shown = models.find((m) => m.id === peek) ?? models.find((m) => m.id === value)
+
+  return (
+    <div className="model-picker">
+      <div className="menu menu-models" onMouseLeave={() => setPeek(null)}>
+        <div className="menu-head">
+          <NebiusLogo /> Served by Nebius Token Factory
+        </div>
+        {vendors.map((v) => (
+          <div key={v} className="menu-group">
+            <div className="menu-label">{v}</div>
+            {models
+              .filter((m) => m.vendor === v)
+              .map((m) => (
+                <button
+                  key={m.id}
+                  className={m.id === value ? 'menu-item is-active' : 'menu-item'}
+                  onMouseEnter={() => setPeek(m.id)}
+                  onFocus={() => setPeek(m.id)}
+                  onClick={() => onPick(m.id)}
+                >
+                  <ModelLogo vendor={m.vendor} model={m.id} size={26} />
+                  <span className="menu-text">
+                    <b>
+                      {m.label}
+                      {m.is_default && <em className="badge">Default</em>}
+                    </b>
+                    <span>
+                      {m.tokens_per_second ? `${Math.round(m.tokens_per_second)} tok/s · ` : ''}
+                      {formatTokens(m.context_window)} context
+                    </span>
+                  </span>
+                  {m.id === value && <Check className="menu-check" />}
+                </button>
+              ))}
+          </div>
+        ))}
+      </div>
+      {shown && <ModelCard model={shown} fastest={fastest} />}
+    </div>
   )
 }
 

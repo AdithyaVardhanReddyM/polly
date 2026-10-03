@@ -9,7 +9,8 @@ export function AgentRail({
   subtitle,
   icon,
   newLabel,
-  empty
+  empty,
+  only
 }: {
   store: AgentStore
   title: string
@@ -17,8 +18,11 @@ export function AgentRail({
   icon: React.JSX.Element
   newLabel: string
   empty: string
+  /** List one agent's sessions, in a store that covers several. */
+  only?: string
 }): React.JSX.Element {
-  const sessions = store((s) => s.sessions)
+  const every = store((s) => s.sessions)
+  const sessions = only ? every.filter((s) => s.agent_id === only) : every
   const sessionId = store((s) => s.sessionId)
   const open = store((s) => s.open)
   const remove = store((s) => s.remove)

@@ -4,9 +4,9 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
-from polly_server import artifacts, model_registry, projects, sessions
+from polly_server import artifacts, model_registry, projects, sandbox, sessions
 from polly_server.agents import builders, catalog
 from polly_server.api.routers.design import context_note
 from polly_server.api.schemas import (
@@ -133,6 +133,7 @@ async def delete_session(session_id: str) -> None:
     await manager.cancel(session_id)
     coder_agent.forget(session_id)
     builders.forget(session_id)
+    sandbox.forget(session_id)
     if not sessions.delete(session_id):
         raise HTTPException(404, f"no session {session_id!r}")
 
@@ -323,6 +324,25 @@ def research_sessions(session_id: str) -> SessionList:
     """Sessions started from this one (change research), newest first."""
     _session(session_id)
     return SessionList(sessions=sessions.list_children(session_id))
+
+
+@router.get("/sessions/{session_id}/outputs")
+async def session_output(session_id: str, path: str) -> Response:
+    """A file the agent saved for the user in its sandbox: a chart, a CSV."""
+    session = _session(session_id)
+    try:
+        content, media = await sandbox.read_output(session.id, path)
+    except sandbox.NoSuchOutput:
+        raise HTTPException(404, f"no output {path!r}") from None
+    name = path.rsplit("/", 1)[-1].replace('"', "")
+    # Images show in the chat; anything else is a download.
+    shown = media.startswith("image/") and media != "image/svg+xml"
+    disposition = "inline" if shown else f'attachment; filename="{name}"'
+    return Response(
+        content,
+        media_type=media if shown else "application/octet-stream",
+        headers={"Cache-Control": "no-store", "Content-Disposition": disposition},
+    )
 
 
 @router.get("/sessions/{session_id}/artifacts", response_model=Artifacts)

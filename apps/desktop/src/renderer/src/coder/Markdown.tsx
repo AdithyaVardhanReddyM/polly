@@ -1,4 +1,4 @@
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, FileDown } from 'lucide-react'
 import { Children, createContext, memo, useContext, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
@@ -10,6 +10,14 @@ const rehypePlugins = [[rehypeHighlight, { detect: true, ignoreMissing: true }]]
 
 /** The numbered sources of the session on screen; turns `[n]` into links. */
 export const CitationContext = createContext<Source[]>([])
+
+/**
+ * Turns the path of a file an agent saved in its sandbox (`/outputs/chart.png`)
+ * into a URL the app can load; null where the session has no sandbox.
+ */
+export const OutputContext = createContext<((path: string) => string) | null>(null)
+
+const isOutput = (url: string | null | undefined): url is string => !!url?.startsWith('/outputs/')
 
 const CITE = /(?<![\w\]])\[(\d{1,3})\](?![(:[])/g
 
@@ -33,6 +41,7 @@ export const isWebUrl = (url: string | null | undefined): url is string =>
 /** Assistant prose: GitHub-flavoured Markdown with highlighted code. */
 export const Markdown = memo(function Markdown({ text }: { text: string }): React.JSX.Element {
   const sources = useContext(CitationContext)
+  const output = useContext(OutputContext)
   const byId = new Map(sources.filter((s) => isWebUrl(s.url)).map((s) => [s.id, s]))
   return (
     <div className="md">
@@ -44,7 +53,27 @@ export const Markdown = memo(function Markdown({ text }: { text: string }): Reac
           // Models write <br> for line breaks inside table cells; honour it.
           td: ({ children }) => <td>{withBreaks(children)}</td>,
           th: ({ children }) => <th>{withBreaks(children)}</th>,
+          img: ({ src, alt }) => {
+            const url = typeof src === 'string' ? src : ''
+            if (isOutput(url)) {
+              if (!output) return <span className="md-output-missing">{alt || url}</span>
+              return (
+                <a className="md-output" href={output(url)} target="_blank" rel="noreferrer">
+                  <img src={output(url)} alt={alt ?? ''} loading="lazy" />
+                </a>
+              )
+            }
+            return <img src={url} alt={alt ?? ''} loading="lazy" />
+          },
           a: ({ href, children }) => {
+            if (isOutput(href) && output) {
+              return (
+                <a className="md-file" href={output(href)} download={href.split('/').pop()}>
+                  <FileDown />
+                  {children}
+                </a>
+              )
+            }
             const cited = href?.startsWith('#cite-') ? byId.get(Number(href.slice(6))) : undefined
             if (cited) {
               return (

@@ -5,12 +5,13 @@ export type ThemePref = 'system' | 'light' | 'dark'
 const KEY = 'polly.theme'
 const BACKGROUND = { light: '#fafafb', dark: '#111114' }
 
+/** Light unless the user chose dark, or chose to follow the system. */
 function read(): ThemePref {
   try {
     const v = localStorage.getItem(KEY)
-    return v === 'light' || v === 'dark' ? v : 'system'
+    return v === 'dark' || v === 'system' ? v : 'light'
   } catch {
-    return 'system'
+    return 'light'
   }
 }
 
@@ -28,7 +29,7 @@ const listeners = new Set<(p: ThemePref) => void>()
 
 export function setTheme(pref: ThemePref): void {
   try {
-    if (pref === 'system') localStorage.removeItem(KEY)
+    if (pref === 'light') localStorage.removeItem(KEY)
     else localStorage.setItem(KEY, pref)
   } catch {
     /* storage can be unavailable */
