@@ -21,6 +21,7 @@ import type {
   Transcript,
   TreeNode
 } from '../../shared/contracts'
+import type { DesignDoc } from './design/model'
 
 const DEFAULT_SERVER = 'http://127.0.0.1:8787'
 
@@ -149,6 +150,34 @@ export const api = {
     commentPreview: (id: string) =>
       get<{ markdown: string }>(`/sessions/${id}/scorecard/preview`),
     postComment: (id: string) => postSlow<{ url: string }>(`/sessions/${id}/scorecard/post`)
+  },
+
+  design: {
+    get: (id: string) => get<DesignDoc>(`/sessions/${id}/design`),
+    put: (id: string, doc: DesignDoc) => request<DesignDoc>('PUT', `/sessions/${id}/design`, doc),
+    screenshot: (id: string, requestId: string, dataUrl: string) =>
+      request<{ accepted: boolean }>(
+        'POST',
+        `/sessions/${id}/design/screenshots/${requestId}`,
+        { data_url: dataUrl },
+        30_000
+      ),
+    /** Store an image the user added; the body is the file itself. */
+    upload: async (id: string, file: Blob, name: string): Promise<Result<{ name: string; url: string }>> => {
+      const url = `${await serverUrl()}/sessions/${id}/design/assets${q({ name })}`
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': file.type || 'application/octet-stream' },
+          body: file
+        })
+        const payload = (await res.json()) as { detail?: string; name: string; url: string }
+        if (!res.ok) return { ok: false, error: payload.detail ?? `HTTP ${res.status}` }
+        return { ok: true, data: payload }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
   },
 
   reviews: {

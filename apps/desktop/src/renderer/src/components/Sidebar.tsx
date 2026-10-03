@@ -6,6 +6,7 @@ import {
   Monitor,
   PanelLeftClose,
   PanelLeftOpen,
+  PenTool,
   Plug,
   RotateCw,
   Settings as Cog,
@@ -19,6 +20,7 @@ import { SidebarStage, useStageArt } from './StageArt'
 export const SECTIONS = [
   'Home',
   'Coder',
+  'Design',
   'Research',
   'Review',
   'Agents',
@@ -30,6 +32,7 @@ export type Section = (typeof SECTIONS)[number] | 'Settings'
 const ICONS: Record<Section, React.JSX.Element> = {
   Home: <House />,
   Coder: <CodeXml />,
+  Design: <PenTool />,
   Research: <Telescope />,
   Review: <GitPullRequest />,
   Agents: <Bot />,

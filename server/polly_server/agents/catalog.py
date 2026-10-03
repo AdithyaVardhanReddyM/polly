@@ -1,4 +1,4 @@
-"""The built-in agents. Coder, Reviewer, Researcher and Deep Research run
+"""The built-in agents. Coder, Designer, Reviewer, Researcher and Deep Research run
 today; the rest are declared only. `change-research` is internal: it runs
 after a Coder session and is not listed as an agent of its own."""
 
@@ -11,6 +11,7 @@ from polly_server.coder.prompt import (
     SYSTEM_PROMPT,
     TESTER_PROMPT,
 )
+from polly_server.design.prompt import DESIGNER_PROMPT
 from polly_server.research.prompts import (
     CHANGE_RESEARCH_PROMPT,
     CRITIC_PROMPT,
@@ -22,6 +23,18 @@ from polly_server.reviewer.prompt import RESEARCH_HELPER_PROMPT, REVIEWER_PROMPT
 
 RESEARCH = ("research_search", "web_extract")
 GITHUB = ("github_pr_overview", "github_pr_files", "github_file", "github_pr_checks")
+DESIGN = (
+    "get_design",
+    "get_html",
+    "create_artboard",
+    "update_artboard",
+    "delete_artboard",
+    "write_html",
+    "update_nodes",
+    "delete_nodes",
+    "set_fonts",
+    "review_design",
+)
 
 SCOUT = SubagentSpec(
     "scout",
@@ -77,7 +90,7 @@ CATALOG: tuple[AgentSpec, ...] = (
         id="designer",
         name="Designer",
         division="coding",
-        runtime="deep",
+        runtime="agent",
         avatar={
             "eyesVariant": "happy",
             "topVariant": "lightbar",
@@ -85,13 +98,15 @@ CATALOG: tuple[AgentSpec, ...] = (
             "mouthVariant": "smile",
             "bodyColor": "b6a6f5",
         },
-        tagline="Turns ideas into interfaces",
+        tagline="Turns ideas into interfaces and graphics",
         description=(
-            "Sketches UI, builds working front-end prototypes and checks them in "
-            "a real browser on its computer."
+            "Designs screens, posters and graphics on a canvas you can edit by "
+            "hand, checks its own work from a screenshot and exports clean HTML, "
+            "Tailwind or React."
         ),
-        tools=("sandbox", "browser", "figma"),
-        computer=True,
+        status="ready",
+        system_prompt=DESIGNER_PROMPT,
+        tools=DESIGN,
     ),
     AgentSpec(
         id="reviewer",

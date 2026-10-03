@@ -388,7 +388,30 @@ interface EventBase {
   run_id: string
 }
 
+/** An artboard as the Designer's tools report it (`design/document.py`). */
+export interface DesignArtboard {
+  id: string
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+  background: string
+  html: string
+}
+
 export type CoderEvent =
+  | (EventBase & { type: 'tool.streaming'; agent: string; name: string; artboard_id?: string })
+  | (EventBase & {
+      type: 'design.artboard'
+      action: 'create' | 'write' | 'edit'
+      artboard: DesignArtboard
+      focus: string[]
+      rev: number
+    })
+  | (EventBase & { type: 'design.removed'; artboard_id: string; rev: number })
+  | (EventBase & { type: 'design.fonts'; fonts: string[]; rev: number })
+  | (EventBase & { type: 'design.screenshot'; request_id: string; artboard_id: string })
   | (EventBase & {
       type: 'run.started'
       session_id: string

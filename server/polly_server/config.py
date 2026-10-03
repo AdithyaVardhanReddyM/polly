@@ -21,6 +21,8 @@ DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 DEFAULT_FAST_MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
 # Serious reasoning: scoring pull requests, critiquing research drafts.
 DEFAULT_STRONG_MODEL = "nvidia/Nemotron-3-Ultra-550b-a55b"
+# Looks at screenshots: the Designer's critic.
+DEFAULT_VISION_MODEL = "zai-org/GLM-5.3-Flash"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -39,6 +41,7 @@ class Settings:
     model: str
     fast_model: str
     strong_model: str
+    vision_model: str
 
     sandbox_provider: str
     tavily_api_key: str
@@ -80,6 +83,7 @@ def load() -> Settings:
         model=_env("POLLY_MODEL", DEFAULT_MODEL),
         fast_model=_env("POLLY_FAST_MODEL", DEFAULT_FAST_MODEL),
         strong_model=_env("POLLY_STRONG_MODEL", DEFAULT_STRONG_MODEL),
+        vision_model=_env("POLLY_VISION_MODEL", DEFAULT_VISION_MODEL),
         sandbox_provider=_env("POLLY_SANDBOX", "contree"),
         tavily_api_key=_env("TAVILY_API_KEY"),
         github_client_id=_env("GITHUB_CLIENT_ID"),

@@ -8,6 +8,7 @@ import {
   FilePlus,
   FileSearch,
   Folder,
+  Frame,
   GitBranch,
   GitCommitHorizontal,
   GitCompare,
@@ -15,6 +16,8 @@ import {
   Gauge,
   Globe,
   ListChecks,
+  PenTool,
+  ScanEye,
   Search,
   ShieldCheck,
   SquareTerminal,
@@ -101,6 +104,46 @@ export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta 
       return { icon: <GitBranch />, verb: 'Branch', target: s(args.name) }
     case 'git_commit':
       return { icon: <GitCommitHorizontal />, verb: 'Commit', target: s(args.message).split('\n')[0] }
+    case 'get_design':
+      return { icon: <Eye />, verb: 'Look at the canvas', target: s(args.artboard_id) }
+    case 'get_html':
+      return { icon: <Eye />, verb: 'Read', target: s(args.node_id ?? args.artboard_id) }
+    case 'create_artboard':
+      return {
+        icon: <Frame />,
+        verb: 'New frame',
+        target: `${s(args.name)}  ${s(args.width)}×${s(args.height)}`
+      }
+    case 'update_artboard':
+      return { icon: <Frame />, verb: 'Change frame', target: s(args.name ?? args.artboard_id) }
+    case 'delete_artboard':
+      return { icon: <Trash2 />, verb: 'Delete frame', target: s(args.artboard_id) }
+    case 'write_html':
+      return {
+        icon: <PenTool />,
+        verb: args.target_id ? 'Draw part' : 'Draw',
+        target: s(args.target_id ?? args.artboard_id)
+      }
+    case 'update_nodes':
+      return {
+        icon: <PenTool />,
+        verb: 'Refine',
+        target: `${Array.isArray(args.updates) ? args.updates.length : 0} layer(s)`
+      }
+    case 'delete_nodes':
+      return {
+        icon: <Trash2 />,
+        verb: 'Remove',
+        target: `${Array.isArray(args.node_ids) ? args.node_ids.length : 0} layer(s)`
+      }
+    case 'set_fonts':
+      return {
+        icon: <PenTool />,
+        verb: 'Load fonts',
+        target: Array.isArray(args.families) ? args.families.map(s).join(', ') : ''
+      }
+    case 'review_design':
+      return { icon: <ScanEye />, verb: 'Review', target: s(args.brief) }
     case 'task':
       return { icon: <Bot />, verb: 'Delegate', target: s(args.subagent_type) }
     default:

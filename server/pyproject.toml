@@ -16,6 +16,7 @@ dependencies = [
     "langchain-nebius>=0.1",
     "langchain-tavily>=0.2",
     "langgraph-checkpoint-sqlite>=3.1.1",
+    "beautifulsoup4>=4.15.0",
 ]
 
 [project.optional-dependencies]

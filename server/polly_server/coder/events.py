@@ -18,10 +18,12 @@ Event types (mirrored by `CoderEvent` in `apps/desktop/src/shared/contracts.ts`)
     file.changed        {path, kind, additions, deletions}
     usage               {input_tokens, output_tokens, total_tokens, run_total, context_tokens}
     compaction          {node}
+    tool.streaming      {agent, name, artboard_id?}   a tool call still being written
 """
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -48,6 +50,7 @@ def _reasoning_of(message: BaseMessage) -> str:
 
 
 REJECTED_PREFIX = "User rejected the tool call"
+_ARTBOARD_ARG = re.compile(r'"artboard_id"\s*:\s*"([^"]+)"')
 
 
 def tool_status(message: ToolMessage, output: str) -> str:
@@ -155,6 +158,8 @@ class _Translator:
         self.tasks_by_ns: dict[str, dict[str, Any]] = {}
         self.tasks_by_call: dict[str, dict[str, Any]] = {}
         self.call_started: dict[str, float] = {}
+        # Tool calls the model is still writing: (message id, index) -> state.
+        self.drafts: dict[tuple[str, int], dict[str, Any]] = {}
         self.call_names: dict[str, str] = {}
 
     # ---------- helpers ----------
@@ -198,9 +203,10 @@ class _Translator:
             return []  # summarisation and other side calls stay quiet
         text = text_of(chunk)
         reasoning = _reasoning_of(chunk)
+        drafts = self._draft_events(chunk, self._agent_for(ns, metadata))
         if not text and not reasoning:
-            return []
-        events = self._subagent_events(ns)
+            return drafts
+        events = self._subagent_events(ns) + drafts
         agent = self._agent_for(ns, metadata)
         message_id = chunk.id or self.open.get(agent) or uuid.uuid4().hex
         self.open[agent] = message_id
@@ -214,6 +220,30 @@ class _Translator:
         if reasoning:
             payload["reasoning"] = reasoning
         events.append(payload)
+        return events
+
+    def _draft_events(self, chunk: AIMessageChunk, agent: str) -> list[dict[str, Any]]:
+        """A long tool call (a whole artboard of HTML) takes a while to write.
+        Say which tool is coming, and which artboard, as soon as it is known."""
+        events: list[dict[str, Any]] = []
+        for part in getattr(chunk, "tool_call_chunks", None) or []:
+            key = (chunk.id or "", int(part.get("index") or 0))
+            draft = self.drafts.setdefault(key, {"name": "", "args": "", "artboard": None})
+            fresh = False
+            if part.get("name") and not draft["name"]:
+                draft["name"] = part["name"]
+                fresh = True
+            if draft["artboard"] is None and part.get("args"):
+                draft["args"] = (draft["args"] + part["args"])[:400]
+                found = _ARTBOARD_ARG.search(draft["args"])
+                if found:
+                    draft["artboard"] = found.group(1)
+                    fresh = True
+            if fresh and draft["name"]:
+                event = {"type": "tool.streaming", "agent": agent, "name": draft["name"]}
+                if draft["artboard"]:
+                    event["artboard_id"] = draft["artboard"]
+                events.append(event)
         return events
 
     def on_updates(self, ns: tuple[str, ...], data: Any) -> list[dict[str, Any]]:

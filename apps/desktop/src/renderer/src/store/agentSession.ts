@@ -51,11 +51,15 @@ interface Options {
   agentIds: string[]
   /** `research` keeps the open session in `#research/<id>`; null leaves the URL alone. */
   hash: string | null
+  /** Sees every event of the open session (the Designer's canvas follows along). */
+  onEvent?: (event: CoderEvent, sessionId: string) => void
+  /** Runs before a message is sent, once the session exists. */
+  beforeSend?: (sessionId: string) => Promise<void>
 }
 
 export type AgentStore = UseBoundStore<StoreApi<AgentSessionState>>
 
-export function createAgentStore({ agentIds, hash }: Options): AgentStore {
+export function createAgentStore({ agentIds, hash, onEvent, beforeSend }: Options): AgentStore {
   return create<AgentSessionState>((set, get) => {
     let controller: AbortController | null = null
 
@@ -103,6 +107,7 @@ export function createAgentStore({ agentIds, hash }: Options): AgentStore {
           break
       }
       set(patch)
+      if (onEvent && state.sessionId) onEvent(event, state.sessionId)
     }
 
     async function loadArtifacts(id: string): Promise<void> {
@@ -245,6 +250,7 @@ export function createAgentStore({ agentIds, hash }: Options): AgentStore {
           setHash(sid)
         }
         set({ items: [...get().items, { kind: 'user', id: `local-${Date.now()}`, text: trimmed }] })
+        if (beforeSend) await beforeSend(sid)
         const { path, body } = streams.message(sid, trimmed)
         await drive(path, body, sid)
       },

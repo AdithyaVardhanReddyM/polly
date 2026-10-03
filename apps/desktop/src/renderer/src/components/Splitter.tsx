@@ -45,7 +45,9 @@ export function Splitter({
   min,
   max,
   onResize,
-  onReset
+  onReset,
+  yields = ':scope > .chat',
+  yieldsMin = MIN_CHAT
 }: {
   side: 'left' | 'right'
   width: number
@@ -53,6 +55,9 @@ export function Splitter({
   max: number
   onResize: (w: number) => void
   onReset: () => void
+  /** The sibling that gives up room as the pane grows, and how narrow it may get. */
+  yields?: string
+  yieldsMin?: number
 }): React.JSX.Element {
   const [dragging, setDragging] = useState(false)
   const start = useRef({ x: 0, width: 0, room: 0 })
@@ -61,9 +66,9 @@ export function Splitter({
     if (e.button !== 0) return
     e.preventDefault()
     const workspace = e.currentTarget.parentElement
-    const chat = workspace?.querySelector<HTMLElement>(':scope > .chat')
-    // The pane can grow only as far as the chat column can shrink.
-    const room = chat ? chat.getBoundingClientRect().width - MIN_CHAT : Infinity
+    const chat = workspace?.querySelector<HTMLElement>(yields)
+    // The pane can grow only as far as the column next to it can shrink.
+    const room = chat ? chat.getBoundingClientRect().width - yieldsMin : Infinity
     start.current = { x: e.clientX, width, room: Math.max(0, room) }
     e.currentTarget.setPointerCapture(e.pointerId)
     setDragging(true)

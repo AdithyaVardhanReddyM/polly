@@ -5,11 +5,13 @@ import { SECTIONS, Sidebar, type Section, useSidebarCollapsed } from './componen
 import { Agents } from './pages/Agents'
 import { Coder } from './pages/Coder'
 import { Computers } from './pages/Computers'
+import { Design } from './pages/Design'
 import { Home } from './pages/Home'
 import { Integrations } from './pages/Integrations'
 import { Research } from './pages/Research'
 import { PR_URL, Review } from './pages/Review'
 import { Settings } from './pages/Settings'
+import { useDesign } from './design/session'
 import { useResearch, useReview } from './store/agentSession'
 import { useCoder } from './store/coder'
 
@@ -24,11 +26,14 @@ const ALL_SECTIONS: readonly Section[] = [...SECTIONS, 'Settings']
 /** Where each runnable agent lives. */
 const HOME_OF: Record<string, Section> = {
   coder: 'Coder',
+  designer: 'Design',
   researcher: 'Research',
   'deep-research': 'Research',
   reviewer: 'Review'
 }
 
+const DESIGNING =
+  /\b(design|redesign|mock ?up|wireframe|poster|banner|flyer|logo|landing page|ui for|screen for)\b/i
 const CODING = /\b(fix|implement|refactor|debug|bug|failing tests?|write (a )?tests?|add .+ to (my|the|this))\b/i
 
 /** The open section lives in the URL hash (`#coder/<session>` deep-links a
@@ -66,14 +71,22 @@ export default function App(): React.JSX.Element {
     }
   }, [section])
 
-  const flush = section === 'Coder' || section === 'Research' || section === 'Review'
+  const flush = section === 'Coder' || section === 'Design' || section === 'Research' || section === 'Review'
 
   /** A task from Home: a PR link goes to the Reviewer, code work to the
-   *  Coder, everything else to research. */
+   *  Coder, design work to the Designer, everything else to research. */
   const start = async (agentId: string, text: string): Promise<void> => {
     const pr = text.match(PR_URL)?.[0]
     const target =
-      agentId !== 'auto' ? agentId : pr ? 'reviewer' : CODING.test(text) ? 'coder' : 'researcher'
+      agentId !== 'auto'
+        ? agentId
+        : pr
+          ? 'reviewer'
+          : CODING.test(text)
+            ? 'coder'
+            : DESIGNING.test(text)
+              ? 'designer'
+              : 'researcher'
     if (target === 'reviewer') {
       setSection('Review')
       if (pr) {
@@ -92,6 +105,12 @@ export default function App(): React.JSX.Element {
       }
       return
     }
+    if (target === 'designer') {
+      setSection('Design')
+      useDesign.getState().newSession()
+      await useDesign.getState().send(text)
+      return
+    }
     setSection('Research')
     const research = useResearch.getState()
     research.newSession()
@@ -102,6 +121,7 @@ export default function App(): React.JSX.Element {
   const openAgent = (id: string): void => {
     const home = HOME_OF[id]
     if (!home) return
+    if (id === 'designer') useDesign.getState().newSession()
     if (id === 'researcher' || id === 'deep-research') {
       useResearch.getState().newSession()
       useResearch.getState().setAgent(id)
@@ -133,6 +153,7 @@ export default function App(): React.JSX.Element {
           />
         )}
         {section === 'Coder' && <Coder agent={agents.find((a) => a.id === 'coder')} />}
+        {section === 'Design' && <Design agents={agents} server={server} />}
         {section === 'Research' && <Research agents={agents} searchReady={searchReady} />}
         {section === 'Review' && (
           <Review agents={agents} onConnect={() => setSection('Integrations')} />

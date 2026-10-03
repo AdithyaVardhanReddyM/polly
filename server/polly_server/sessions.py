@@ -99,8 +99,12 @@ def create(
 
 
 def save(session: Session) -> Session:
+    # Written whole, then swapped in: a reader never sees a half-written file.
     with _lock:
-        _file(session.id).write_text(session.model_dump_json(indent=2))
+        path = _file(session.id)
+        draft = path.with_suffix(".tmp")
+        draft.write_text(session.model_dump_json(indent=2))
+        draft.replace(path)
     return session
 
 

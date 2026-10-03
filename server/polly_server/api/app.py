@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from polly_server import __version__, persistence
 from polly_server.agents import builders, catalog
-from polly_server.api.routers import integrations, models, projects, reviews, sessions
+from polly_server.api.routers import design, integrations, models, projects, reviews, sessions
 from polly_server.api.schemas import AgentList, AgentSummary, Health, ModelInfo, Provider
 from polly_server.config import settings
 from polly_server.integrations import github
@@ -40,6 +40,7 @@ app.add_middleware(
 app.include_router(models.router)
 app.include_router(projects.router)
 app.include_router(sessions.router)
+app.include_router(design.router)
 app.include_router(integrations.router)
 app.include_router(reviews.router)
 

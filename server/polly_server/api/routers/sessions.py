@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from polly_server import artifacts, model_registry, projects, sessions
 from polly_server.agents import builders, catalog
+from polly_server.api.routers.design import context_note
 from polly_server.api.schemas import (
     Artifacts,
     ChangePaths,
@@ -173,8 +174,13 @@ async def send_message(session_id: str, body: MessageIn) -> StreamingResponse:
     project = _project_for_run(session)
     if session.status == "awaiting_approval":
         raise HTTPException(409, "decide on the pending action first")
+    text, display = body.content, None
+    if session.agent_id == "designer":
+        # The Designer needs to know what is on the canvas and what is selected.
+        text = f"{body.content}\n\n<canvas>\n{context_note(session.id)}\n</canvas>"
+        display = body.content
     try:
-        run = await manager.start(project, session, body.content)
+        run = await manager.start(project, session, text, display=display)
     except SessionBusy:
         raise HTTPException(409, "this session is already running") from None
     return _stream(run)

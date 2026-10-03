@@ -5,6 +5,7 @@ import App from './App'
 import './styles.css'
 import './coder.css'
 import './stage.css'
+import './design.css'
 import { initTheme } from './theme'
 
 initTheme()

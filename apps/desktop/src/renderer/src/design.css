@@ -1,0 +1,1411 @@
+/* ==========================================================================
+   Design workspace: chat | layers | canvas | edit panel
+   Built on the tokens in styles.css; works in light and dark.
+   ========================================================================== */
+
+.design {
+  --head-h: 48px;
+  --canvas-bg: #f1f1f4;
+  --dz-accent: #7c5cd6;
+  --dz-guide: #ff3d9a;
+  --dz-field: var(--sidebar);
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  font-size: 13.5px;
+}
+
+:root[data-theme='dark'] .design {
+  --canvas-bg: #0c0c0f;
+  --dz-accent: #a08ce4;
+}
+
+.design button {
+  -webkit-app-region: no-drag;
+}
+
+.design > .design-chat {
+  flex: 0 0 var(--design-chat-w);
+  min-width: 300px;
+  border-right: 1px solid var(--line);
+}
+
+.design-chat .chat-head {
+  position: relative;
+}
+
+.design-start {
+  padding: 24px 20px;
+}
+
+.design-start h2 {
+  font-size: 24px;
+}
+
+.design-start .starter-grid {
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: 340px;
+}
+
+.design-start .starter-grid .starter {
+  min-height: 0;
+}
+
+.welcome-mark.is-design {
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+}
+
+body:has(.splitter.is-dragging) .design {
+  pointer-events: none;
+}
+
+.design-history {
+  position: absolute;
+  top: calc(var(--head-h) - 4px);
+  right: 8px;
+  z-index: 30;
+  width: 300px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  -webkit-app-region: no-drag;
+}
+
+.design-history h5,
+.dz-palette h5 {
+  margin: 6px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.design-history-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.design-history-row:hover,
+.design-history-row.is-active {
+  background: var(--hover);
+}
+
+.design-history-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.design-history-row em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.design-history-row .icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  opacity: 0;
+}
+
+.design-history-row:hover .icon-btn {
+  opacity: 1;
+}
+
+.design-history-row .icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- stage ---------- */
+
+.design-stage {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  background: var(--canvas-bg);
+}
+
+.design-canvas {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.dz-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--canvas-bg);
+  user-select: none;
+  touch-action: none;
+}
+
+.dz-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  pointer-events: none;
+  background: var(--canvas-bg);
+}
+
+.dz-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.dz-canvas.is-editing .dz-overlay {
+  pointer-events: none;
+}
+
+.dz-overlay > *,
+.dz-overlay > div > * {
+  position: absolute;
+}
+
+.dz-board-label {
+  height: 18px;
+  padding: 0 2px;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: default;
+  transition: color 0.3s;
+}
+
+.dz-board-label:hover,
+.dz-board-label.is-selected {
+  color: var(--dz-accent);
+}
+
+.dz-board-label input {
+  width: 160px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--dz-accent);
+  border-radius: 3px;
+  outline: none;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.dz-outline,
+.dz-selection {
+  left: 0;
+  top: 0;
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.dz-hover {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--dz-accent) 75%, transparent);
+}
+
+.dz-selected,
+.dz-selection {
+  box-shadow: 0 0 0 1.5px var(--dz-accent);
+}
+
+.dz-editing {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--dz-accent) 55%, transparent);
+}
+
+.dz-handle,
+.dz-rot,
+.dz-size {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.dz-handle {
+  width: 9px;
+  height: 9px;
+  margin: -5px;
+  border: 1.5px solid var(--dz-accent);
+  border-radius: 2px;
+  background: #fff;
+}
+
+.dz-handle.is-nw { left: 0; top: 0; cursor: nwse-resize; }
+.dz-handle.is-n { left: 50%; top: 0; cursor: ns-resize; }
+.dz-handle.is-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.dz-handle.is-e { left: 100%; top: 50%; cursor: ew-resize; }
+.dz-handle.is-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.dz-handle.is-s { left: 50%; top: 100%; cursor: ns-resize; }
+.dz-handle.is-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.dz-handle.is-w { left: 0; top: 50%; cursor: ew-resize; }
+
+/* Edge handles are wide, invisible grips along the side. */
+.dz-handle.is-n,
+.dz-handle.is-s {
+  width: calc(100% - 18px);
+  height: 9px;
+  margin: -5px 0 0 0;
+  left: 9px;
+  border: none;
+  background: transparent;
+}
+
+.dz-handle.is-e,
+.dz-handle.is-w {
+  height: calc(100% - 18px);
+  width: 9px;
+  margin: 0 0 0 -5px;
+  top: 9px;
+  border: none;
+  background: transparent;
+}
+
+.dz-rot {
+  width: 18px;
+  height: 18px;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke-linecap='round'%3E%3Cpath d='M20 12a8 8 0 1 1-3-6.2M20 4v5h-5' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M20 12a8 8 0 1 1-3-6.2M20 4v5h-5' stroke='%23111' stroke-width='2'/%3E%3C/svg%3E") 10 10, crosshair;
+}
+
+.dz-rot.is-nw { left: -20px; top: -20px; }
+.dz-rot.is-ne { right: -20px; top: -20px; }
+.dz-rot.is-se { right: -20px; bottom: -20px; }
+.dz-rot.is-sw { left: -20px; bottom: -20px; }
+
+.dz-size {
+  left: 50%;
+  top: calc(100% + 8px);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--dz-accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dz-marquee {
+  border: 1px solid var(--dz-accent);
+  background: color-mix(in srgb, var(--dz-accent) 10%, transparent);
+  pointer-events: none;
+}
+
+.dz-guide {
+  background: var(--dz-guide);
+  pointer-events: none;
+}
+
+.dz-drop-box {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--dz-accent) 60%, transparent);
+  background: color-mix(in srgb, var(--dz-accent) 5%, transparent);
+  pointer-events: none;
+}
+
+.dz-drop-line {
+  border-radius: 2px;
+  background: var(--dz-accent);
+  box-shadow: 0 0 0 1px #fff;
+  pointer-events: none;
+}
+
+.dz-ghost {
+  border: 1.5px dashed var(--dz-accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--dz-accent) 8%, transparent);
+  pointer-events: none;
+}
+
+/* ---------- the agent at work ---------- */
+
+@property --dz-cx {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --dz-cy {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --dz-r {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 30px;
+}
+
+.dz-presence {
+  pointer-events: none;
+  box-shadow: 0 0 0 1.5px var(--dz-agent);
+  transition:
+    --dz-cx 1.1s cubic-bezier(0.4, 0, 0.2, 1),
+    --dz-cy 1.1s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: dz-appear 0.35s ease-out both;
+}
+
+@keyframes dz-appear {
+  from {
+    opacity: 0;
+  }
+}
+
+.dz-dots {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-image: radial-gradient(circle, var(--dz-agent) 1.1px, transparent 1.5px);
+  background-size: 13px 13px;
+  -webkit-mask-image: radial-gradient(
+    circle var(--dz-r) at var(--dz-cx) var(--dz-cy),
+    #000 0%,
+    rgba(0, 0, 0, 0.55) 45%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    circle var(--dz-r) at var(--dz-cx) var(--dz-cy),
+    #000 0%,
+    rgba(0, 0, 0, 0.55) 45%,
+    transparent 100%
+  );
+  animation: dz-ripple 2.2s ease-in-out infinite;
+}
+
+@keyframes dz-ripple {
+  0%,
+  100% {
+    --dz-r: calc(var(--dz-reach) * 0.45);
+    opacity: 0.85;
+  }
+  55% {
+    --dz-r: var(--dz-reach);
+    opacity: 0.5;
+  }
+}
+
+.dz-presence:not(.is-building) .dz-dots {
+  animation: dz-ping 1.1s ease-out both;
+}
+
+@keyframes dz-ping {
+  from {
+    --dz-r: 8px;
+    opacity: 0.9;
+  }
+  to {
+    --dz-r: var(--dz-reach);
+    opacity: 0;
+  }
+}
+
+.dz-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: flex-start;
+  color: var(--dz-agent);
+  transition: transform 1.1s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.18));
+}
+
+.dz-cursor svg {
+  width: 16px;
+  height: 16px;
+  margin: -2px 0 0 -2px;
+  flex: none;
+}
+
+.dz-cursor span {
+  margin: 10px 0 0 -2px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--dz-agent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dz-dots,
+  .dz-presence {
+    animation: none;
+  }
+  .dz-cursor,
+  .dz-presence {
+    transition: none;
+  }
+}
+
+/* ---------- floating chrome ---------- */
+
+.dz-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  transform: translateX(-50%);
+}
+
+.dz-toolbar button,
+.dz-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dz-toolbar button:hover:not(:disabled),
+.dz-chip:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.dz-toolbar button.is-active {
+  background: var(--dz-accent);
+  color: #fff;
+}
+
+.dz-toolbar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.dz-toolbar svg,
+.dz-chip svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dz-toolbar i {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--line);
+}
+
+.dz-toolbar .dz-zoom {
+  width: 50px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dz-corner {
+  position: absolute;
+  top: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dz-corner.is-left {
+  left: 10px;
+}
+
+.dz-corner.is-right {
+  right: 10px;
+}
+
+.dz-chip {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.dz-chip.is-active {
+  color: var(--dz-accent);
+}
+
+.dz-save {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.dz-save.is-error {
+  color: var(--down);
+}
+
+.dz-empty {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  text-align: center;
+  color: var(--muted);
+  transform: translate(-50%, -50%);
+}
+
+.dz-empty > svg {
+  width: 28px;
+  height: 28px;
+  color: var(--faint);
+}
+
+.dz-empty b {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.dz-empty .btn {
+  margin-top: 8px;
+}
+
+/* ---------- side panels ---------- */
+
+.dz-left,
+.dz-right {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.dz-left {
+  width: 236px;
+  border-right: 1px solid var(--line);
+}
+
+.dz-right {
+  width: 264px;
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.dz-tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  height: var(--head-h);
+  padding: 0 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.dz-tabs button {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.dz-tabs button.is-active {
+  background: var(--hover);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.dz-layers,
+.dz-palette {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.dz-layer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding-right: 4px;
+  border-radius: 6px;
+  color: var(--ink);
+  cursor: default;
+}
+
+.dz-layer.is-board {
+  padding-left: 4px;
+  font-weight: 600;
+}
+
+.dz-layer.is-hover,
+.dz-layer:hover {
+  background: var(--hover);
+}
+
+.dz-layer.is-selected {
+  background: color-mix(in srgb, var(--dz-accent) 16%, transparent);
+}
+
+.dz-layer.is-hidden {
+  opacity: 0.45;
+}
+
+.dz-layer.is-drop-inside {
+  box-shadow: inset 0 0 0 1.5px var(--dz-accent);
+}
+
+.dz-layer.is-drop-before::after,
+.dz-layer.is-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--dz-accent);
+}
+
+.dz-layer.is-drop-before::after {
+  top: -1px;
+}
+
+.dz-layer.is-drop-after::after {
+  bottom: -1px;
+}
+
+.dz-twist,
+.dz-eye {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.dz-twist svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.12s;
+}
+
+.dz-twist.is-open svg {
+  transform: rotate(90deg);
+}
+
+.dz-twist.is-leaf {
+  visibility: hidden;
+}
+
+.dz-layer-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--faint);
+}
+
+.dz-layer-icon svg,
+.dz-eye svg {
+  width: 13px;
+  height: 13px;
+}
+
+.dz-layer.is-selected .dz-layer-icon {
+  color: var(--dz-accent);
+}
+
+.dz-layer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dz-eye {
+  width: 22px;
+  opacity: 0;
+}
+
+.dz-layer:hover .dz-eye,
+.dz-layer.is-hidden .dz-eye {
+  opacity: 1;
+}
+
+.dz-note {
+  margin: 8px;
+  color: var(--faint);
+  line-height: 1.5;
+}
+
+.dz-note.is-error {
+  margin: 6px 0 0;
+  color: var(--down);
+}
+
+.dz-palette-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.dz-palette-grid button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  cursor: grab;
+}
+
+.dz-palette-grid button:hover {
+  border-color: var(--dz-accent);
+}
+
+.dz-palette-grid svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--faint);
+}
+
+.dz-palette-grid span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- edit panel ---------- */
+
+.dz-inspector {
+  display: flex;
+  flex-direction: column;
+}
+
+.dz-insp-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  height: var(--head-h);
+  padding: 15px 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.dz-insp-head b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dz-insp-head span {
+  flex: none;
+  color: var(--faint);
+}
+
+.dz-align {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dz-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dz-section > header {
+  display: flex;
+  align-items: center;
+  height: 22px;
+}
+
+.dz-section h4 {
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dz-mini,
+.dz-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dz-mini {
+  width: 22px;
+  height: 22px;
+}
+
+.dz-mini:hover,
+.dz-icon:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.dz-icon.is-active {
+  background: color-mix(in srgb, var(--dz-accent) 16%, transparent);
+  color: var(--dz-accent);
+}
+
+.dz-icon:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.dz-mini svg,
+.dz-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dz-icon-space {
+  flex: none;
+  width: 26px;
+}
+
+.dz-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dz-row > .dz-num,
+.dz-row > .dz-select,
+.dz-row > .dz-seg,
+.dz-row > .dz-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.dz-num,
+.dz-select,
+.dz-text,
+.dz-hex {
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--dz-field);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.dz-num {
+  display: flex;
+  align-items: center;
+}
+
+.dz-num:hover,
+.dz-select:hover,
+.dz-text:hover,
+.dz-hex:hover {
+  border-color: var(--line-strong);
+}
+
+.dz-num:focus-within,
+.dz-select:focus-within,
+.dz-text:focus,
+.dz-hex:focus {
+  border-color: var(--dz-accent);
+  outline: none;
+}
+
+.dz-num.is-disabled {
+  opacity: 0.45;
+}
+
+.dz-num-label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-width: 22px;
+  height: 100%;
+  padding: 0 2px 0 7px;
+  color: var(--faint);
+  font-size: 11px;
+  cursor: ew-resize;
+  user-select: none;
+}
+
+.dz-num-label:empty {
+  min-width: 6px;
+  padding: 0;
+}
+
+.dz-num-label svg {
+  width: 12px;
+  height: 12px;
+}
+
+.dz-num input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px;
+  border: none;
+  outline: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.dz-num em {
+  flex: none;
+  padding-right: 6px;
+  color: var(--faint);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.dz-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.dz-select select {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  height: 100%;
+  padding: 0 22px 0 8px;
+  border: none;
+  outline: none;
+  appearance: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.dz-select > svg {
+  position: absolute;
+  right: 6px;
+  width: 12px;
+  height: 12px;
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.dz-text,
+.dz-hex {
+  padding: 0 8px;
+  font-family: inherit;
+}
+
+.dz-text {
+  width: 100%;
+}
+
+.dz-seg {
+  display: flex;
+  height: 28px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--dz-field);
+}
+
+.dz-seg button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dz-seg button.is-active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.dz-seg svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dz-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dz-btn:hover {
+  border-color: var(--line-strong);
+  background: var(--hover);
+}
+
+.dz-btn svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.dz-export {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.dz-export .dz-btn:first-child {
+  grid-column: 1 / -1;
+}
+
+.dz-export .dz-btn {
+  justify-content: flex-start;
+}
+
+/* colour */
+
+.dz-color {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dz-color .dz-hex {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.dz-color .dz-num {
+  flex: 0 0 58px;
+}
+
+.dz-swatch {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    conic-gradient(#d4d4d8 25%, #fff 0 50%, #d4d4d8 0 75%, #fff 0) 0 0 / 8px 8px;
+  cursor: pointer;
+}
+
+.dz-swatch i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.dz-picker {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 236px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.dz-sv {
+  position: relative;
+  height: 150px;
+  border-radius: 8px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.dz-sv::before,
+.dz-sv::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.dz-sv::before {
+  background: linear-gradient(to right, #fff, transparent);
+}
+
+.dz-sv::after {
+  background: linear-gradient(to top, #000, transparent);
+}
+
+.dz-sv i,
+.dz-hue i,
+.dz-alpha i {
+  position: absolute;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  margin: -7px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.dz-hue,
+.dz-alpha {
+  position: relative;
+  height: 12px;
+  margin: 0 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.dz-hue i,
+.dz-alpha i {
+  top: 50%;
+}
+
+.dz-hue {
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+
+.dz-alpha {
+  background:
+    linear-gradient(to right, transparent, var(--dz-solid)),
+    conic-gradient(#d4d4d8 25%, #fff 0 50%, #d4d4d8 0 75%, #fff 0) 0 0 / 8px 8px;
+}
+
+.dz-alpha i {
+  background: var(--dz-solid);
+}
+
+.dz-swatches {
+  display: flex;
+  justify-content: space-between;
+}
+
+.dz-swatches button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+}
+
+/* layout, gradient, shadow */
+
+.dz-align-grid {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 62px;
+  height: 62px;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--dz-field);
+}
+
+.dz-align-grid button {
+  position: relative;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.dz-align-grid button::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.dz-align-grid button:hover::after {
+  background: var(--ink);
+}
+
+.dz-align-grid button.is-active::after {
+  width: 12px;
+  height: 8px;
+  margin: -4px -6px;
+  border-radius: 2px;
+  background: var(--dz-accent);
+}
+
+.dz-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dz-gradient,
+.dz-shadow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dz-shadow + .dz-shadow {
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.dz-gradient-bar {
+  height: 14px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.dz-stop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dz-stop .dz-color {
+  flex: 1;
+  min-width: 0;
+}
+
+.dz-stop .dz-color > .dz-num {
+  display: none;
+}
+
+.dz-stop > .dz-num {
+  flex: 0 0 58px;
+}
+
+.dz-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dz-presets button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dz-presets button:hover {
+  background: var(--hover);
+}
+
+.dz-presets em {
+  color: var(--faint);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.dz-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+}
+
+.dz-keys div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dz-keys dt {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.dz-keys dd {
+  margin: 0;
+  color: var(--muted);
+}

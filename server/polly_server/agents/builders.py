@@ -46,9 +46,10 @@ def listed(spec: AgentSpec) -> bool:
     return spec.metadata.get("internal") != "true"
 
 
-def _dated(prompt: str) -> str:
+def _dated(prompt: str, *, sources: bool = True) -> str:
     today = dt.date.today()
-    return f"{prompt}\n\nToday is {today:%A, %d %B %Y}. Prefer sources from the last year."
+    dated = f"{prompt}\n\nToday is {today:%A, %d %B %Y}."
+    return f"{dated} Prefer sources from the last year." if sources else dated
 
 
 def _resolve(spec: AgentSpec) -> AgentSpec:
@@ -59,7 +60,7 @@ def _resolve(spec: AgentSpec) -> AgentSpec:
         spec,
         tools=tool_registry.available(spec.tools),
         subagents=subagents,
-        system_prompt=_dated(spec.system_prompt),
+        system_prompt=_dated(spec.system_prompt, sources=spec.id != "designer"),
     )
 
 
