@@ -80,7 +80,14 @@ def build_coder(
 
     spec = catalog.get("coder")
     assert spec is not None
-    spec = replace(spec, tools=tool_registry.available(spec.tools))
+    have = tool_registry.registry()
+    spec = replace(
+        spec,
+        tools=tool_registry.available(spec.tools),
+        # A helper whose tools are not configured (the librarian without web
+        # search) is left out rather than failing the whole build.
+        subagents=tuple(s for s in spec.subagents if all(t in have for t in s.tools)),
+    )
 
     main = model or chat_model(model=session.model)
     fast = fast_model or chat_model("fast")
@@ -98,6 +105,10 @@ def build_coder(
         subagent_overrides={
             "explorer": {"model": fast, "middleware": [ReadOnlyToolsMiddleware()]},
             "tester": {"model": fast, "middleware": [PermissionMiddleware()]},
+            "librarian": {
+                "model": fast,
+                "middleware": [ReadOnlyToolsMiddleware(also={"research_search", "web_extract"})],
+            },
         },
     )
     if use_cache:

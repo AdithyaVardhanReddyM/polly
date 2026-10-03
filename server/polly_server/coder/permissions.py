@@ -376,12 +376,20 @@ def _make_middleware():
             return await handler(request)
 
     class ReadOnlyToolsMiddleware(AgentMiddleware):
-        """For subagents that only look: no writes, no commands, no nesting."""
+        """For subagents that only look: no writes, no commands, no nesting.
+
+        `also` names tools outside `READ_TOOLS` the subagent may use, such as
+        web research for the librarian.
+        """
 
         name = "PollyReadOnly"
 
+        def __init__(self, also: set[str] | frozenset[str] = frozenset()) -> None:
+            super().__init__()
+            self.allowed = (READ_TOOLS - {"task"}) | frozenset(also)
+
         def _model_request(self, request: ModelRequest) -> ModelRequest:
-            tools = [t for t in request.tools if _tool_name(t) in READ_TOOLS - {"task"}]
+            tools = [t for t in request.tools if _tool_name(t) in self.allowed]
             return request.override(tools=tools)
 
         def wrap_model_call(self, request, handler):

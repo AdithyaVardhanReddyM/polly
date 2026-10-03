@@ -1,5 +1,4 @@
 import {
-  Bot,
   Check,
   ChevronRight,
   CircleAlert,
@@ -14,6 +13,7 @@ import type { AgentSummary, ApprovalRequired, Source } from '../../../shared/con
 import { AgentAvatar } from '../components/AgentAvatar'
 import { type RunState, type ToolItem, type TranscriptItem, useCoder } from '../store/coder'
 import { ApprovalCard } from './ApprovalCard'
+import { type Subagent, crewMember, crewOf, isBusy, roleOf, title } from './crew'
 import { DiffView } from './DiffView'
 import { CitationContext, Markdown } from './Markdown'
 import { formatDuration, toolMeta } from './toolMeta'
@@ -37,7 +37,6 @@ export function Transcript({ agent }: { agent?: AvatarAgent }): React.JSX.Elemen
 
 // ---------- shaping the transcript into blocks ----------
 
-type Subagent = Extract<TranscriptItem, { kind: 'subagent' }>
 type Assistant = Extract<TranscriptItem, { kind: 'assistant' }>
 
 type Step =
@@ -146,7 +145,8 @@ export function TranscriptView({
   const running = run === 'running'
   const seconds = useRunClock(running)
   const lastBlock = blocks[blocks.length - 1]
-
+  const crew = crewOf(items)
+  const busy = running && isBusy(crew)
 
   return (
     <CitationContext.Provider value={sources}>
@@ -171,7 +171,11 @@ export function TranscriptView({
                 return <Notice key={b.id} tone={b.item.tone} text={b.item.text} />
             }
           })}
-          {running && <Working seconds={seconds} label={activity(items)} agent={agent} />}
+          {busy ? (
+            <CrewBoard lead={agent} crew={crew} seconds={seconds} />
+          ) : (
+            running && <Working seconds={seconds} label={activity(items)} agent={agent} />
+          )}
           {approval && <ApprovalCard approval={approval} />}
           {footer}
         </div>
@@ -366,6 +370,117 @@ function Working({
 function formatElapsed(seconds: number): string {
   if (seconds < 60) return `${seconds}s`
   return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
+}
+
+// ---------- the crew ----------
+
+/** A once-a-second clock, for elapsed times that tick. */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [])
+  return now
+}
+
+/** What a helper is doing right now, in a few words. */
+function memberActivity(m: Subagent): string {
+  if (m.status === 'error') return 'Failed'
+  if (m.status === 'done') return `Done · ${m.tools.length} step${m.tools.length === 1 ? '' : 's'}`
+  const step = m.tools[m.tools.length - 1]
+  if (step?.status === 'running') {
+    const meta = toolMeta(step.name, step.args)
+    return `${meta.verb} ${meta.target}`.trim()
+  }
+  if (m.live) return 'Writing up'
+  return m.tools.length ? 'Thinking' : 'Starting'
+}
+
+/** The names of the helpers still at work: "Explorer and Tester". */
+export function crewLabel(crew: Subagent[]): string {
+  const names = [...new Set(crew.filter((m) => m.status === 'running').map((m) => title(m.name)))]
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+/**
+ * The lead and the helpers it has called on this turn, side by side: who is
+ * on what, and how far along. Replaces the one-line status while any helper
+ * is still working; once they all report back, the lead's status line returns.
+ */
+function CrewBoard({
+  lead,
+  crew,
+  seconds
+}: {
+  lead?: AvatarAgent
+  crew: Subagent[]
+  seconds: number
+}): React.JSX.Element {
+  const now = useNow()
+  const working = crew.filter((m) => m.status === 'running').length
+  const leadName = lead?.name ?? 'Coder'
+  return (
+    <div className="crew-board" role="status" aria-live="polite">
+      <div className="crew-lead">
+        {lead ? (
+          <span className="crew-lead-bot" aria-hidden>
+            <AgentAvatar agent={lead} size={30} bare motion="fast" />
+          </span>
+        ) : (
+          <span className="working-mark" aria-hidden />
+        )}
+        <div className="crew-lead-text">
+          <b>{leadName}</b>
+          <span className="shimmer">
+            {working === 1 ? `Waiting on ${crewLabel(crew)}` : `Working with ${working} helpers`}
+          </span>
+        </div>
+        {seconds >= 1 && <span className="working-time">{formatElapsed(seconds)}</span>}
+      </div>
+      <div className="crew-members">
+        {crew.map((m) => (
+          <CrewCard key={m.id} member={m} lead={lead} now={now} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CrewCard({
+  member,
+  lead,
+  now
+}: {
+  member: Subagent
+  lead?: AvatarAgent
+  now: number
+}): React.JSX.Element {
+  const running = member.status === 'running'
+  const started = member.startedAt
+  const until = member.finishedAt ?? now
+  const elapsed = started ? Math.max(0, Math.floor((until - started) / 1000)) : 0
+  return (
+    <div className={`crew-card is-${member.status}`}>
+      <span className="crew-card-bot" aria-hidden>
+        <AgentAvatar agent={crewMember(member.name, lead)} size={32} bare motion={running ? 'fast' : 'none'} />
+      </span>
+      <div className="crew-card-text">
+        <div className="crew-card-head">
+          <b>{title(member.name)}</b>
+          <span className="crew-card-role">{roleOf(member.name)}</span>
+          {started && elapsed >= 1 && <span className="crew-card-time">{formatElapsed(elapsed)}</span>}
+        </div>
+        <div className={running ? 'crew-status shimmer' : 'crew-status'} title={memberActivity(member)}>
+          {memberActivity(member)}
+        </div>
+        <div className="crew-brief" title={member.description}>
+          {member.description}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ---------- steps ----------
@@ -581,10 +696,10 @@ function SubagentStep({ item }: { item: Subagent }): React.JSX.Element {
   return (
     <div className={`step is-subagent is-${item.status}${open ? ' is-open' : ''}`}>
       <button className="step-head" onClick={() => setOpen(!open)}>
-        <span className="step-icon">{item.status === 'running' ? <span className="spinner" /> : <Bot />}</span>
-        <span className={item.status === 'running' ? 'step-verb shimmer' : 'step-verb'}>
-          {item.name.charAt(0).toUpperCase() + item.name.slice(1)}
+        <span className="step-icon is-bot">
+          <AgentAvatar agent={crewMember(item.name)} size={18} bare motion={item.status === 'running' ? 'fast' : 'none'} />
         </span>
+        <span className={item.status === 'running' ? 'step-verb shimmer' : 'step-verb'}>{title(item.name)}</span>
         <span className="step-target is-prose" title={item.description}>
           {item.description}
         </span>

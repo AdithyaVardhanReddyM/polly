@@ -109,3 +109,26 @@ def _go(manager, project, session):
         return run
 
     return asyncio.run(inner())
+
+
+def test_coder_prompt_introduces_every_subagent():
+    from polly_server.agents import catalog
+    from polly_server.coder.prompt import SYSTEM_PROMPT
+
+    spec = catalog.get("coder")
+    names = [s.name for s in spec.subagents]
+    assert names == ["explorer", "tester", "librarian"]
+    for name in names:
+        assert f"`{name}`" in SYSTEM_PROMPT
+    librarian = next(s for s in spec.subagents if s.name == "librarian")
+    assert set(librarian.tools) == {"research_search", "web_extract"}
+
+
+@pytest.mark.usefixtures("memory_checkpointer")
+def test_coder_builds_without_web_search(project):
+    """Without a Tavily key the librarian has no tools, so it is left out and
+    the Coder still builds (the tests run with the key unset)."""
+    session = sessions.create(project.id, model="x", mode="supervised")
+    fake = scripted("hi")
+    agent = coder_agent.build_coder(project, session, model=fake, fast_model=fake, use_cache=False)
+    assert agent is not None

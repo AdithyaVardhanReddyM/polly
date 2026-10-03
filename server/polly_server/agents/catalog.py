@@ -5,7 +5,12 @@ after a Coder session and is not listed as an agent of its own."""
 from __future__ import annotations
 
 from polly_server.agents.spec import AgentSpec, SubagentSpec
-from polly_server.coder.prompt import EXPLORER_PROMPT, SYSTEM_PROMPT, TESTER_PROMPT
+from polly_server.coder.prompt import (
+    EXPLORER_PROMPT,
+    LIBRARIAN_PROMPT,
+    SYSTEM_PROMPT,
+    TESTER_PROMPT,
+)
 from polly_server.research.prompts import (
     CHANGE_RESEARCH_PROMPT,
     CRITIC_PROMPT,
@@ -58,6 +63,13 @@ CATALOG: tuple[AgentSpec, ...] = (
                 "tester",
                 "Writes and runs tests for a change and reports what passed.",
                 system_prompt=TESTER_PROMPT,
+            ),
+            SubagentSpec(
+                "librarian",
+                "Looks up a library, API, version change or error message on the web "
+                "and returns short notes with sources. Read-only.",
+                system_prompt=LIBRARIAN_PROMPT,
+                tools=RESEARCH,
             ),
         ),
     ),

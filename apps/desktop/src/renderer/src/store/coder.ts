@@ -51,6 +51,9 @@ export type TranscriptItem =
       summary?: string
       live?: string // latest streamed text, while running
       tools: ToolItem[]
+      /** Wall-clock bounds of a live run; unknown for a reloaded session. */
+      startedAt?: number
+      finishedAt?: number
     }
   | { kind: 'notice'; id: string; tone: 'info' | 'warn' | 'error'; text: string }
 
@@ -281,7 +284,8 @@ export function reduce(items: TranscriptItem[], event: CoderEvent, main = 'coder
       if (items.some((it) => (it.kind === 'tool' || it.kind === 'subagent') && it.id === event.call_id))
         return items // a resumed run replays the call that paused it
       if (event.name === 'task' && isMain(event.agent)) {
-        return [...items, subagentFor({ id: event.call_id, name: event.name, args: event.args })]
+        const task = subagentFor({ id: event.call_id, name: event.name, args: event.args })
+        return [...items, { ...task, startedAt: Date.now() }]
       }
       const tool: ToolItem = {
         kind: 'tool',
@@ -318,7 +322,8 @@ export function reduce(items: TranscriptItem[], event: CoderEvent, main = 'coder
             ...it,
             status: event.status === 'ok' ? 'done' : 'error',
             summary: event.output,
-            live: undefined
+            live: undefined,
+            finishedAt: Date.now()
           })
         return items
       }
@@ -371,7 +376,11 @@ export function reduce(items: TranscriptItem[], event: CoderEvent, main = 'coder
       )
       if (event.status === 'cancelled') {
         next = next.map((it) =>
-          it.kind === 'tool' && it.status === 'running' ? { ...it, status: 'error' as ToolStatus } : it
+          it.kind === 'tool' && it.status === 'running'
+            ? { ...it, status: 'error' as ToolStatus }
+            : it.kind === 'subagent' && it.status === 'running'
+              ? { ...it, status: 'error' as const, live: undefined, finishedAt: Date.now() }
+              : it
         )
         next.push({ kind: 'notice', id: `end-${event.run_id}`, tone: 'warn', text: 'Stopped.' })
       }

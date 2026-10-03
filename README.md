@@ -73,7 +73,7 @@ The first agent that works end to end. Open a project folder and Coder reads it,
 - **Permission modes.** *Supervised* asks before every edit and command. *Trusted* edits freely and asks before commands and deletes. *Autonomous* never asks. *Plan* is read-only and produces a plan. Switch with the chip under the composer or `Shift+Tab`.
 - **Approvals inline.** A paused action shows its diff or command. Approve (`Y`), reject with a reason (`N`), or "Always allow" this file, folder or command prefix for the project. A project's blocked-command list applies in every mode, and a command that reaches outside the project folder always asks.
 - **Changes panel.** Every file the Coder creates, edits or deletes in a session, with a diff against how it was before. Keep or undo each one. In git repositories, changes made by shell commands show up too.
-- **Plan and subagents.** Multi-step work gets a live checklist. The *explorer* and *tester* subagents run on the faster Nemotron Nano and appear as nested cards.
+- **Plan and subagents.** Multi-step work gets a live checklist. The *explorer*, *tester* and *librarian* subagents run on the faster Nemotron Nano: the first two read code and run tests, the librarian looks up library docs and APIs on the web so long pages never reach the Coder's context. While they work, a crew board shows who is on what, and each one's steps appear as a nested card.
 - **Memory.** `POLLY.md` in the project root is read at the start of every session (one click generates it). The Coder keeps a private per-project notebook of what it learns. Long sessions are summarised at 85% of the model's context window, and the context meter shows how full it is.
 - **Sessions.** Every conversation is checkpointed. Reopen it, resume a paused approval, or reload the window mid-run and pick the stream back up.
 - **Models.** Pick per session: Nemotron 3 Super (default), Ultra, Nano and 3.5 Lightning, GLM 5.3 and 5.3 Flash, DeepSeek V4 Pro and Kimi K2.7 Code, all on Nebius Token Factory. Reasoning streams into a collapsible "Thought process".
@@ -139,7 +139,7 @@ All models are NVIDIA Nemotron, served by **Nebius Token Factory**. Heavy reason
 | Role | Model |
 | --- | --- |
 | Coder | Nemotron 3 Super (selectable per session) |
-| Coder subagents: explorer, tester | Nemotron 3 Nano |
+| Coder subagents: explorer, tester, librarian | Nemotron 3 Nano |
 | Researcher | Nemotron 3 Super |
 | Deep Research lead | Nemotron 3 Super |
 | Deep Research scouts | Nemotron 3 Nano |

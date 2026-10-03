@@ -16,7 +16,8 @@ import type { AgentSummary, Project } from '../../../shared/contracts'
 import { Composer, Popover } from '../coder/Composer'
 import { Inspector } from '../coder/Inspector'
 import { ProjectMenu, ProjectRail, shortPath } from '../coder/ProjectRail'
-import { Transcript } from '../coder/Transcript'
+import { Transcript, crewLabel } from '../coder/Transcript'
+import { crewMember, crewOf } from '../coder/crew'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { Workspace } from '../components/Splitter'
 import { useCoder } from '../store/coder'
@@ -51,6 +52,8 @@ export function Coder({ agent }: { agent: AgentSummary | undefined }): React.JSX
   }
 
   const project = projects.find((p) => p.id === projectId)
+  // Helpers at work this turn, for the header while the run is live.
+  const helpers = run === 'running' ? crewOf(items).filter((m) => m.status === 'running') : []
   // A new session: the prompt sits centre stage until the first message.
   const hero = !!project && items.length === 0
 
@@ -99,8 +102,21 @@ export function Coder({ agent }: { agent: AgentSummary | undefined }): React.JSX
               </span>
             )}
           </div>
+          {helpers.length > 0 && (
+            <span className="run-crew" title={`Working with ${crewLabel(helpers)}`}>
+              {helpers.map((m) => (
+                <AgentAvatar key={m.id} agent={crewMember(m.name, agent)} size={20} bare motion="fast" />
+              ))}
+            </span>
+          )}
           <span className={`run-state is-${run}`}>
-            {run === 'running' ? 'Working' : run === 'awaiting_approval' ? 'Needs approval' : ''}
+            {run === 'running'
+              ? helpers.length
+                ? `Working with ${crewLabel(helpers)}`
+                : 'Working'
+              : run === 'awaiting_approval'
+                ? 'Needs approval'
+                : ''}
           </span>
           <button
             className="icon-btn"
