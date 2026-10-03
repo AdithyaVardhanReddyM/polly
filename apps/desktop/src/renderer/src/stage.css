@@ -92,8 +92,17 @@
   filter: drop-shadow(0 1px 3px rgba(18, 12, 48, 0.35));
 }
 
+/* no chip: a heavier, pure-white icon with a shadow to lift it off the scene */
 .sidebar.has-stage .sidebar-toggle {
-  color: rgba(255, 255, 255, 0.78);
+  color: #fff;
+}
+
+.sidebar.has-stage .sidebar-toggle svg {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  stroke-width: 2.1;
+  filter: drop-shadow(0 0 1px rgba(18, 12, 48, 0.7)) drop-shadow(0 1px 3px rgba(18, 12, 48, 0.55));
 }
 
 .sidebar.has-stage .sidebar-toggle:hover {
@@ -178,8 +187,12 @@
   pointer-events: none;
 }
 
+/* a heavier, pure-white arrow with a shadow to lift it off the scene */
 .send:has(> .send-art) svg:not(.send-art svg) {
-  filter: drop-shadow(0 1px 1px rgba(18, 12, 48, 0.35));
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.25;
+  filter: drop-shadow(0 0 1px rgba(18, 12, 48, 0.7)) drop-shadow(0 1px 3px rgba(18, 12, 48, 0.55));
 }
 
 .send:has(> .send-art):hover:not(:disabled) {
