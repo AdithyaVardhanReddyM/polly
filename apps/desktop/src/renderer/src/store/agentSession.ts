@@ -1,5 +1,7 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import type {
+  AskAnswer,
+  AskRequired,
   ChangeReport,
   CoderEvent,
   PRFacts,
@@ -10,6 +12,13 @@ import type {
 import { api, streams } from '../api'
 import { stream } from '../sse'
 import { fromWire, reduce, type RunState, type TranscriptItem } from './coder'
+import { useRoster } from './roster'
+
+/** Sent on `window` when an agent is made in a conversation; `App` reloads the agents. */
+export const AGENTS_CHANGED = 'polly:agents-changed'
+
+/** Sent on `window` when a routine is made in a conversation. */
+export const ROUTINES_CHANGED = 'polly:routines-changed'
 
 /**
  * A chat with one of the agents that run without a project: the Researcher,
@@ -35,6 +44,8 @@ export interface AgentSessionState {
    * start; null follows the agent's own team.
    */
   members: string[] | null
+  /** A card the run waits on: hire an agent, answer a question, connect an app… */
+  pendingAsk: AskRequired | null
 
   sources: Source[]
   report: ChangeReport | null
@@ -54,6 +65,8 @@ export interface AgentSessionState {
   /** Choose the conversation's teammates. */
   setMembers: (ids: string[]) => Promise<void>
   cancel: () => Promise<void>
+  /** Answer the card the run waits on, and let it carry on. */
+  answer: (value: AskAnswer) => Promise<void>
   review: (prUrl: string) => Promise<boolean>
   clearError: () => void
 }
@@ -97,6 +110,7 @@ export function createAgentStore({
         items: [],
         run: 'idle',
         members: null,
+        pendingAsk: null,
         sources: [],
         report: null,
         scorecard: null,
@@ -112,9 +126,30 @@ export function createAgentStore({
       switch (event.type) {
         case 'run.started':
           patch.run = 'running'
+          patch.pendingAsk = null
           break
         case 'run.finished':
-          patch.run = 'idle'
+          patch.run =
+            event.status === 'awaiting_approval' && state.pendingAsk ? 'awaiting_approval' : 'idle'
+          break
+        case 'ask.required': {
+          const { seq: _seq, run_id: _run, via: _via, teammate: _mate, type: _type, ...ask } = event
+          patch.pendingAsk = ask as AskRequired
+          patch.run = 'awaiting_approval'
+          break
+        }
+        case 'agent.hired':
+          patch.members = event.members
+          window.dispatchEvent(new CustomEvent(AGENTS_CHANGED))
+          break
+        case 'team.updated':
+          patch.members = event.members
+          break
+        case 'group.created':
+          void useRoster.getState().load()
+          break
+        case 'routine.created':
+          window.dispatchEvent(new CustomEvent(ROUTINES_CHANGED))
           break
         case 'sources.added': {
           const known = new Set(state.sources.map((s) => s.id))
@@ -174,6 +209,7 @@ export function createAgentStore({
       error: null,
       starting: false,
       members: null,
+      pendingAsk: null,
       sources: [],
       report: null,
       scorecard: null,
@@ -253,7 +289,8 @@ export function createAgentStore({
             ? ownerOf(t.session)
             : get().agentId,
           items,
-          run: t.run_id ? 'running' : 'idle',
+          pendingAsk: t.run_id ? null : (t.pending_ask ?? null),
+          run: t.run_id ? 'running' : t.pending_ask ? 'awaiting_approval' : 'idle',
           ...(artifacts.ok
             ? {
                 sources: artifacts.data.sources,
@@ -316,6 +353,15 @@ export function createAgentStore({
       async cancel() {
         const sid = get().sessionId
         if (sid) await api.sessions.cancel(sid)
+      },
+
+      async answer(value) {
+        const sid = get().sessionId
+        const ask = get().pendingAsk
+        if (!sid || !ask) return
+        set({ pendingAsk: null })
+        const { path, body } = streams.answer(sid, ask.interrupt_id, value)
+        await drive(path, body, sid)
       },
 
       async review(prUrl) {

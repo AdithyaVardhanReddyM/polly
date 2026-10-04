@@ -439,6 +439,14 @@ export function reduce(items: TranscriptItem[], event: CoderEvent, main = 'coder
       )
     }
 
+    case 'ask.required':
+      // The call that asked waits on the card.
+      return items.map((it) =>
+        it.kind === 'tool' && it.status === 'running'
+          ? { ...it, status: 'waiting' as ToolStatus }
+          : it
+      )
+
     case 'compaction':
       return [
         ...items,

@@ -40,6 +40,12 @@ export function AgentCard({
       </div>
       <p className="agent-desc">{agent.description}</p>
       <div className="agent-tags">
+        {agent.orchestrator && <span className="tag-polly">Builds teams</span>}
+        {agent.hired && (
+          <span className="tag-polly" title="Polly made this agent for one of its teams">
+            Hired by Polly
+          </span>
+        )}
         {agent.runtime === 'deep' && (
           <span className="tag-long" title="Runs as a Deep Agent: plans, delegates, works for as long as it takes">
             <Timer /> Long-running

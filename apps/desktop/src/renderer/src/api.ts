@@ -4,6 +4,7 @@ import type {
   AgentFields,
   AgentSummary,
   Artifacts,
+  AskAnswer,
   Decision,
   FileChange,
   FileContent,
@@ -18,11 +19,15 @@ import type {
   ProjectSettings,
   RememberRule,
   Result,
+  Routine,
+  RoutineFields,
   Rule,
   ServerHealth,
   Session,
   Transcript,
-  TreeNode
+  TreeNode,
+  Variable,
+  VariableFields
 } from '../../shared/contracts'
 import type { DesignDoc } from './design/model'
 
@@ -265,6 +270,36 @@ export const api = {
       request<AgentSummary>('PUT', `/agents/${encodeURIComponent(agentId)}/integrations`, {
         integrations
       })
+  },
+
+  /** Settings and secrets for agents; secret values are only ever sent, never read. */
+  variables: {
+    list: async (): Promise<Result<Variable[]>> => {
+      const res = await get<{ variables: Variable[] }>('/variables')
+      return res.ok ? { ok: true, data: res.data.variables } : res
+    },
+    put: (name: string, body: VariableFields) =>
+      request<Variable>('PUT', `/variables/${encodeURIComponent(name)}`, body),
+    remove: async (name: string): Promise<Result<Variable[]>> => {
+      const res = await request<{ variables: Variable[] }>(
+        'DELETE',
+        `/variables/${encodeURIComponent(name)}`
+      )
+      return res.ok ? { ok: true, data: res.data.variables } : res
+    }
+  },
+
+  /** Tasks an agent or a group runs by itself, on a schedule or on a GitHub event. */
+  routines: {
+    list: async (): Promise<Result<Routine[]>> => {
+      const res = await get<{ routines: Routine[] }>('/routines')
+      return res.ok ? { ok: true, data: res.data.routines } : res
+    },
+    create: (body: RoutineFields) => post<Routine>('/routines', body),
+    update: (id: string, body: Partial<Pick<RoutineFields, 'name' | 'prompt' | 'trigger' | 'enabled'>>) =>
+      patch<Routine>(`/routines/${encodeURIComponent(id)}`, body),
+    remove: (id: string) => del(`/routines/${encodeURIComponent(id)}`),
+    run: (id: string) => postSlow<Routine>(`/routines/${encodeURIComponent(id)}/run`)
   }
 }
 
@@ -277,6 +312,10 @@ export const streams = {
   decisions: (sessionId: string, decisions: Decision[], remember: RememberRule[] = []) => ({
     path: `/sessions/${sessionId}/decisions`,
     body: { decisions, remember }
+  }),
+  answer: (sessionId: string, interruptId: string | null, value: AskAnswer) => ({
+    path: `/sessions/${sessionId}/answer`,
+    body: { interrupt_id: interruptId, ...value }
   }),
   events: (sessionId: string, after: number) => ({
     path: `/sessions/${sessionId}/events${q({ after })}`,
