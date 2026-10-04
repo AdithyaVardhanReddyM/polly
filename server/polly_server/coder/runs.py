@@ -132,6 +132,17 @@ class RunManager:
     ) -> Run:
         return self._launch(project, session, Command(resume={"decisions": decisions}), None)
 
+    async def answer(
+        self,
+        project: Project | None,
+        session: Session,
+        interrupt_id: str | None,
+        value: dict[str, Any],
+    ) -> Run:
+        """Resume a run paused on a card (`agents/asks.py`) with the user's answer."""
+        resume = {interrupt_id: value} if interrupt_id else value
+        return self._launch(project, session, Command(resume=resume), None)
+
     async def cancel(self, session_id: str) -> bool:
         run = self.active.get(session_id)
         if run is None or run.task is None:
@@ -257,7 +268,7 @@ class RunManager:
                     event["context_tokens"] = context_tokens
                     event["session_total"] = usage.model_dump()
                     event["context_window"] = _context_window(session.model)
-                if event["type"] == "approval.required":
+                if event["type"] in ("approval.required", "ask.required"):
                     interrupted = True
                 await run.push(event)
             if interrupted:

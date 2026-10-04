@@ -14,6 +14,7 @@ import json
 import threading
 import time
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -40,6 +41,8 @@ class CustomAgent(BaseModel):
     memory: bool = True
     # DiceBear voxel-bot options; `seed` picks the robot.
     avatar: dict[str, str] = Field(default_factory=dict)
+    # Who made it: the user in the builder, or Polly with the user's approval.
+    origin: Literal["user", "polly"] = "user"
     created_at: float = 0
     updated_at: float = 0
 
@@ -63,6 +66,7 @@ class CustomAgent(BaseModel):
             memory=self.memory,
             model=self.model,
             avatar=self.avatar,
+            metadata={"origin": self.origin},
         )
 
 

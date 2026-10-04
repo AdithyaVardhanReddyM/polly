@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from polly_server import model_registry, sandbox, sessions
+from polly_server import model_registry, sandbox, sessions, variables
 from polly_server.agents import builders, catalog, custom, drafting, groups, team
 from polly_server.api.schemas import (
     AgentConfig,
@@ -140,6 +140,7 @@ async def delete_agent(agent_id: str) -> None:
             await _drop_session(session.id)
     assignments.clear(agent_id)
     team.clear(agent_id)
+    variables.forget_agent(agent_id)
     custom.delete(agent_id)
 
 

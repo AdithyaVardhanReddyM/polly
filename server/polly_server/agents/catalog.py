@@ -7,6 +7,7 @@ after a Coder session and is not listed as an agent of its own.
 from __future__ import annotations
 
 from polly_server.agents import custom
+from polly_server.agents.polly import POLLY_PROMPT
 from polly_server.agents.spec import AgentSpec, SubagentSpec
 from polly_server.coder.prompt import (
     EXPLORER_PROMPT,
@@ -48,6 +49,31 @@ SCOUT = SubagentSpec(
 )
 
 CATALOG: tuple[AgentSpec, ...] = (
+    # ---------- the lead ----------
+    AgentSpec(
+        id="polly",
+        name="Polly",
+        division="everyday",
+        runtime="agent",
+        avatar={
+            "eyesVariant": "happy",
+            "topVariant": "antenna",
+            "chestVariant": "screen",
+            "mouthVariant": "smile",
+            "bodyColor": "ffa94d",
+        },
+        tagline="Puts a team of agents together for you",
+        description=(
+            "Tell it what you want done: it picks the agents for the job, proposes "
+            "new ones when none fit, asks for the apps and settings they need and "
+            "brings their work back as one answer."
+        ),
+        status="ready",
+        system_prompt=POLLY_PROMPT,
+        tools=RESEARCH,
+        model_tier="strong",
+        metadata={"orchestrator": "true"},
+    ),
     # ---------- coding ----------
     AgentSpec(
         id="coder",

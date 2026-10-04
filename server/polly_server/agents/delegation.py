@@ -141,7 +141,15 @@ def tool_for(session: Session, mates: tuple[AgentSpec, ...]) -> BaseTool:
         """
         mate = _find(mates, teammate)
         if mate is None:
-            names = ", ".join(m.name for m in mates)
+            # The team may have grown since the lead was built (Polly adds
+            # agents mid-run): look again.
+            from polly_server import sessions
+            from polly_server.agents import team
+
+            now = sessions.get(session.id)
+            mate = _find(team.roster(now), teammate) if now else None
+        if mate is None:
+            names = ", ".join(m.name for m in mates) or "none yet"
             return f"No teammate called {teammate!r}. Your teammates: {names}."
         if not message.strip():
             return "Give the teammate a brief: what you need from them."

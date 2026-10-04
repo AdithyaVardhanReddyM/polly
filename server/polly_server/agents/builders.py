@@ -19,9 +19,9 @@ import datetime as dt
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from polly_server import memory, model_registry, sandbox
+from polly_server import memory, model_registry, sandbox, variables
 from polly_server import tools as tool_registry
-from polly_server.agents import catalog, delegation, runtime, team
+from polly_server.agents import catalog, delegation, orchestrator, runtime, team
 from polly_server.agents.spec import AgentSpec
 from polly_server.coder.context import CoderContext
 from polly_server.config import settings
@@ -70,8 +70,12 @@ def _resolve(spec: AgentSpec, apps: tuple[str, ...]) -> AgentSpec:
     tools = tool_registry.available(spec.tools)
     searches = bool(tools) if spec.division == "custom" else spec.id != "designer"
     prompt = _dated(spec.system_prompt, sources=searches)
-    if spec.sandbox and sandbox.available():
+    in_sandbox = spec.sandbox and sandbox.available()
+    if in_sandbox:
         prompt = f"{prompt}\n\n{sandbox.PROMPT}"
+    settings_prompt = variables.prompt_for(spec.id, sandbox=in_sandbox)
+    if settings_prompt:
+        prompt = f"{prompt}\n\n{settings_prompt}"
     return replace(
         spec,
         tools=tools,
@@ -110,6 +114,9 @@ def build_agent(
     # agent or changing the team rebuilds it on the next turn.
     apps = assignments.active(spec.id)
     made_as = (spec.system_prompt, spec.tools, spec.sandbox, spec.memory)
+    settings_now = tuple(
+        (v.name, v.secret, "" if v.secret else v.value) for v in variables.usable([spec.id])
+    )
     key = (
         session.id,
         spec.id,
@@ -117,6 +124,7 @@ def build_agent(
         dt.date.today().isoformat(),
         apps,
         made_as,
+        settings_now,
         team.signature(session, mates),
     )
     if use_cache and key in _cache:
@@ -124,7 +132,14 @@ def build_agent(
 
     connected = list(composio.tools_for(apps))
     spec = _resolve(spec, apps if connected else ())
-    if mates:
+    if team.is_orchestrator(spec) and as_agent is None:
+        # Polly makes its team as it goes: it has `ask_teammate` from the
+        # start, and the tool finds agents added after it was built.
+        connected += [*orchestrator.tools_for(session), delegation.tool_for(session, mates)]
+        spec = replace(
+            spec, system_prompt=f"{spec.system_prompt}\n\n{orchestrator.prompt(session, mates)}"
+        )
+    elif mates:
         connected.append(delegation.tool_for(session, mates))
         spec = replace(spec, system_prompt=f"{spec.system_prompt}\n\n{team.prompt(session, mates)}")
     main = model or chat_model(model=model_id)
