@@ -21,6 +21,7 @@ dependencies = [
     "composio-langchain>=0.25.0",
     # Nebius ConTree sandboxes: where agents run code.
     "contree-sdk[langchain]>=0.3.6",
+    "croniter>=6.2.4",
 ]
 
 [project.scripts]

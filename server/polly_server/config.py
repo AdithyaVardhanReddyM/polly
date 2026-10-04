@@ -50,6 +50,9 @@ class Settings:
     # tools agents get from them.
     composio_api_key: str
 
+    # Whether routines fire by themselves (`routines/scheduler.py`).
+    routines: bool = True
+
     @property
     def search_configured(self) -> bool:
         return bool(self.tavily_api_key)
@@ -87,6 +90,7 @@ def load() -> Settings:
         sandbox_provider=_env("POLLY_SANDBOX", "contree"),
         tavily_api_key=_env("TAVILY_API_KEY"),
         composio_api_key=_env("COMPOSIO_API_KEY"),
+        routines=_env("POLLY_ROUTINES", "on").lower() not in {"off", "0", "false", "no"},
     )
 
 

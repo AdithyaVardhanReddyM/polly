@@ -19,19 +19,24 @@ from polly_server.api.routers import (
     models,
     projects,
     reviews,
+    routines,
     sessions,
+    variables,
 )
 from polly_server.api.schemas import Health, ModelInfo, Provider
 from polly_server.config import settings
 from polly_server.integrations import composio
+from polly_server.routines import scheduler
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await persistence.open_checkpointer()
+    scheduler.start()
     try:
         yield
     finally:
+        await scheduler.stop()
         await persistence.close_checkpointer()
 
 
@@ -55,6 +60,8 @@ app.include_router(sessions.router)
 app.include_router(design.router)
 app.include_router(integrations.router)
 app.include_router(reviews.router)
+app.include_router(routines.router)
+app.include_router(variables.router)
 
 
 @app.get("/health", response_model=Health)

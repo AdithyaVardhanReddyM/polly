@@ -21,6 +21,7 @@ import json
 import logging
 import mimetypes
 import threading
+from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any
 from uuid import UUID
@@ -28,6 +29,7 @@ from uuid import UUID
 from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse
 from deepagents.backends.sandbox import BaseSandbox
 
+from polly_server import variables
 from polly_server.config import settings
 from polly_server.sessions import session_dir
 
@@ -163,9 +165,24 @@ class SessionSandbox(BaseSandbox):
 
     async def _execute(self, command: str, timeout: int | None) -> ExecuteResponse:
         inner = await self._ready()
-        result = await inner.aexecute(command, timeout=timeout)
+        found = self._variables()
+        result = await inner.aexecute(variables.env_exports(found) + command, timeout=timeout)
         self._save_version()
+        if found:
+            result = replace(result, output=variables.redact(result.output or "", found))
         return result
+
+    def _variables(self) -> list[variables.Variable]:
+        """The variables the agents in this session may use (`variables.py`):
+        the session's lead and its teammates share one sandbox."""
+        from polly_server import sessions
+        from polly_server.agents import team
+
+        session = sessions.get(self._session_id)
+        if session is None:
+            return []
+        ids = [session.agent_id, *(m.id for m in team.roster(session))]
+        return variables.usable(ids)
 
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
         return _on_sdk_loop(self._execute(command, timeout))
