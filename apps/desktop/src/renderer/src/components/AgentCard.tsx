@@ -1,6 +1,7 @@
 import { ArrowRight, Monitor, Pencil, SquareTerminal, Timer } from 'lucide-react'
 import type { AgentSummary } from '../../../shared/contracts'
 import { AgentAvatar } from './AgentAvatar'
+import { TeamField } from './Team'
 
 const STATUS_LABEL: Record<AgentSummary['status'], string> = {
   ready: 'Ready',
@@ -11,12 +12,15 @@ const STATUS_LABEL: Record<AgentSummary['status'], string> = {
 export function AgentCard({
   agent,
   onOpen,
-  onEdit
+  onEdit,
+  onTeam
 }: {
   agent: AgentSummary
   onOpen?: () => void
   /** For agents the user made. */
   onEdit?: () => void
+  /** Change which agents it hands work to; for agents that run. */
+  onTeam?: (ids: string[]) => void
 }): React.JSX.Element {
   return (
     <article className={onOpen ? 'agent-card is-openable' : 'agent-card'}>
@@ -56,6 +60,7 @@ export function AgentCard({
         ))}
         {agent.tools.length > 4 && <span>+{agent.tools.length - 4}</span>}
       </div>
+      {onTeam && <TeamField agent={agent} onChanged={onTeam} />}
       {onOpen && (
         <button className="btn btn-primary agent-open" onClick={onOpen}>
           Open {agent.name} <ArrowRight />

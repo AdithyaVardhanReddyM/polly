@@ -63,7 +63,7 @@ export function crewMember(name: string, lead?: AvatarAgent): AvatarAgent {
   }
 }
 
-/** The helpers the lead has called on in the current turn, in order. */
+/** The helpers (not teammates) the lead has called on in the current turn, in order. */
 export function crewOf(items: TranscriptItem[]): Subagent[] {
   let start = 0
   for (let i = items.length - 1; i >= 0; i--) {
@@ -72,7 +72,8 @@ export function crewOf(items: TranscriptItem[]): Subagent[] {
       break
     }
   }
-  return items.slice(start).filter((it): it is Subagent => it.kind === 'subagent')
+  // Teammates are agents in their own right, shown as messages, not as crew.
+  return items.slice(start).filter((it): it is Subagent => it.kind === 'subagent' && !it.teammate)
 }
 
 export const isBusy = (crew: Subagent[]): boolean => crew.some((m) => m.status === 'running')

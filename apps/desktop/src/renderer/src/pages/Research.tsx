@@ -11,10 +11,12 @@ import type { AgentSummary } from '../../../shared/contracts'
 import { TranscriptView } from '../coder/Transcript'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { Workspace } from '../components/Splitter'
+import { TeamButton } from '../components/Team'
 import { AgentComposer } from '../research/AgentComposer'
 import { AgentRail } from '../research/AgentRail'
 import { SourcesPanel } from '../research/Sources'
 import { useResearch } from '../store/agentSession'
+import { joinable } from '../store/roster'
 
 const DEPTHS = [
   {
@@ -94,6 +96,7 @@ export function Research({
             {agent && <span>{agent.name}</span>}
           </div>
           <span className={`run-state is-${run}`}>{run === 'running' ? 'Researching' : ''}</span>
+          {agent && <TeamButton store={useResearch} lead={agent} />}
           <button
             className="icon-btn"
             title={panel ? 'Hide sources' : 'Show sources'}
@@ -131,6 +134,7 @@ export function Research({
         <AgentComposer
           store={useResearch}
           disabled={!searchReady}
+          mentionable={joinable(agents).filter((a) => a.id !== agent?.id)}
           placeholder={session ? 'Ask a follow-up…' : 'What should Polly research?'}
         >
           {!session && <DepthSwitch />}

@@ -49,6 +49,9 @@ class AgentSpec:
     # see `integrations/catalog.py`). The user can change the set later.
     integrations: tuple[str, ...] = ()
     subagents: tuple[SubagentSpec, ...] = ()
+    # Other agents it may hand work to from the start (agent ids, see
+    # `team.py`). The user can change the set later.
+    teammates: tuple[str, ...] = ()
     # Folders of SKILL.md files the agent can load on demand.
     skills: tuple[str, ...] = ()
     # Whether the agent gets its own virtual desktop, not just a code sandbox.

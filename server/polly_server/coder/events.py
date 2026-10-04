@@ -19,6 +19,10 @@ Event types (mirrored by `CoderEvent` in `apps/desktop/src/shared/contracts.ts`)
     usage               {input_tokens, output_tokens, total_tokens, run_total, context_tokens}
     compaction          {node}
     tool.streaming      {agent, name, artboard_id?}   a tool call still being written
+
+A teammate at work (`agents/delegation.py`) sends the same events through the
+lead's run, each marked `via` (the lead's `ask_teammate` call) and `teammate`
+(its agent id).
 """
 
 from __future__ import annotations

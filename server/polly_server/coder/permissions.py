@@ -50,6 +50,7 @@ READ_TOOLS = frozenset(
         "COMPOSIO_GET_TOOL_SCHEMAS",
         "write_todos",
         "task",
+        "ask_teammate",
     }
 )
 WRITE_TOOLS = frozenset({"write_file", "edit_file"})

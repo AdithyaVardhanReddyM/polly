@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from polly_server import memory
 from polly_server import tools as tool_registry
-from polly_server.agents import builders, catalog, runtime
+from polly_server.agents import builders, catalog, delegation, runtime, team
 from polly_server.coder.changes import ChangeTracker, make_tracked_backend
 from polly_server.coder.context import CoderContext
 from polly_server.coder.permissions import (
@@ -77,7 +77,8 @@ def build_coder(
     from langchain.agents.middleware import TodoListMiddleware
 
     apps = assignments.active("coder")
-    key = (session.id, session.model, apps)
+    mates = team.roster(session)
+    key = (session.id, session.model, apps, team.signature(session, mates))
     if use_cache and key in _cache:
         return _cache[key]
 
@@ -91,9 +92,12 @@ def build_coder(
         # search) is left out rather than failing the whole build.
         subagents=tuple(s for s in spec.subagents if all(t in have for t in s.tools)),
     )
-    connected = composio.tools_for(apps)
+    connected = list(composio.tools_for(apps))
     if connected:
         spec = replace(spec, system_prompt=builders.with_apps(spec.system_prompt, apps))
+    if mates:
+        connected.append(delegation.tool_for(session, mates))
+        spec = replace(spec, system_prompt=f"{spec.system_prompt}\n\n{team.prompt(session, mates)}")
 
     main = model or chat_model(model=session.model)
     fast = fast_model or chat_model("fast")

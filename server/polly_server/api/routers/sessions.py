@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
 
 from polly_server import artifacts, model_registry, projects, sandbox, sessions
-from polly_server.agents import builders, catalog
+from polly_server.agents import builders, catalog, groups, team
 from polly_server.api.routers.design import context_note
 from polly_server.api.schemas import (
     Artifacts,
@@ -77,9 +77,38 @@ def _stream(run: Run, after: int = -1) -> StreamingResponse:
     return StreamingResponse(body(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
+def _members(ids: list[str] | None, agent_id: str) -> list[str] | None:
+    if ids is None:
+        return None
+    try:
+        return team.check(ids, agent_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+def _addressed(session: Session, mentions: list[str]) -> tuple[Session, str]:
+    """The teammates the user addressed with `@Name`, as a note for the lead.
+    Outside a group, one who was not on the conversation's team joins it."""
+    on_team = {m.id: m for m in team.roster(session)}
+    known = [m for m in dict.fromkeys(mentions) if m != session.agent_id]
+    if session.group_id is None:
+        joining = [m for m in known if m not in on_team and team.can_join(catalog.get(m))]
+        if joining:
+            members = [*on_team, *joining][: team.MAX_TEAMMATES]
+            session = sessions.update(session.id, members=members)
+            on_team = {m.id: m for m in team.roster(session)}
+    mentioned = tuple(on_team[m] for m in known if m in on_team)
+    return session, team.mention_note(mentioned) if mentioned else ""
+
+
 @router.post("/sessions", response_model=Session, status_code=201)
 def create_session(body: SessionCreate) -> Session:
-    spec = catalog.get(body.agent_id)
+    group = None
+    if body.group_id is not None:
+        group = groups.get(body.group_id)
+        if group is None:
+            raise HTTPException(404, f"no group {body.group_id!r}")
+    spec = catalog.get(group.lead if group else body.agent_id)
     if spec is None or not builders.listed(spec):
         raise HTTPException(404, f"no agent {body.agent_id!r}")
     if spec.status != "ready":
@@ -100,13 +129,27 @@ def create_session(body: SessionCreate) -> Session:
         project_id = body.project_id
     if not model_registry.known(model):
         raise HTTPException(400, f"unknown model {model!r}")
-    return sessions.create(project_id, model=model, mode=mode, title=body.title, agent_id=spec.id)
+    return sessions.create(
+        project_id,
+        model=model,
+        mode=mode,
+        title=body.title,
+        agent_id=spec.id,
+        group_id=group.id if group else None,
+        # A group's conversation follows the group; no team of its own.
+        members=None if group else _members(body.members, spec.id),
+    )
 
 
 @router.get("/sessions", response_model=SessionList)
-def list_sessions(agent_id: str) -> SessionList:
-    """Top-level sessions with one agent, newest first (Coder sessions are
-    listed per project: `GET /projects/{id}/sessions`)."""
+def list_sessions(agent_id: str | None = None, group_id: str | None = None) -> SessionList:
+    """Top-level sessions with one agent, or the conversations of one group,
+    newest first (Coder sessions are listed per project:
+    `GET /projects/{id}/sessions`)."""
+    if group_id is not None:
+        return SessionList(sessions=sessions.list_group(group_id))
+    if agent_id is None:
+        raise HTTPException(422, "give an agent_id or a group_id")
     return SessionList(sessions=sessions.list_agent(agent_id))
 
 
@@ -125,6 +168,10 @@ def patch_session(session_id: str, body: SessionPatch) -> Session:
         raise HTTPException(409, "stop the current run before changing the model or mode")
     if session.agent_id != "coder":
         changes.pop("mode", None)
+    if "members" in changes:
+        if session.group_id is not None:
+            raise HTTPException(400, "a group conversation follows its group: change the group")
+        changes["members"] = _members(changes["members"], session.agent_id)
     return sessions.update(session_id, **changes)
 
 
@@ -180,6 +227,11 @@ async def send_message(session_id: str, body: MessageIn) -> StreamingResponse:
         # The Designer needs to know what is on the canvas and what is selected.
         text = f"{body.content}\n\n<canvas>\n{context_note(session.id)}\n</canvas>"
         display = body.content
+    if body.mentions:
+        session, note = _addressed(session, body.mentions)
+        if note:
+            text = f"{text}\n\n{note}"
+            display = body.content
     try:
         run = await manager.start(project, session, text, display=display)
     except SessionBusy:

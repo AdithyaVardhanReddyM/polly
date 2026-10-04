@@ -70,6 +70,7 @@ CATALOG: tuple[AgentSpec, ...] = (
         system_prompt=SYSTEM_PROMPT,
         tools=("web_search", "web_extract", "git_status", "git_diff", "git_branch", "git_commit"),
         integrations=("github", "linear", "sentry"),
+        teammates=("deep-research",),
         subagents=(
             SubagentSpec(
                 "explorer",
@@ -112,6 +113,7 @@ CATALOG: tuple[AgentSpec, ...] = (
         system_prompt=DESIGNER_PROMPT,
         tools=(*DESIGN, *RESEARCH),
         integrations=("figma",),
+        teammates=("researcher",),
     ),
     AgentSpec(
         id="reviewer",
@@ -164,6 +166,7 @@ CATALOG: tuple[AgentSpec, ...] = (
         system_prompt=RESEARCHER_PROMPT,
         tools=RESEARCH,
         integrations=("hackernews", "youtube"),
+        teammates=("deep-research",),
     ),
     AgentSpec(
         id="deep-research",

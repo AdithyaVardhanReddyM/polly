@@ -8,6 +8,7 @@ import './stage.css'
 import './design.css'
 import './integrations.css'
 import './builder.css'
+import './team.css'
 import { initTheme } from './theme'
 
 initTheme()

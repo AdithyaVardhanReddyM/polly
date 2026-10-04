@@ -50,6 +50,12 @@ export type TranscriptItem =
       status: 'running' | 'done' | 'error'
       summary?: string
       live?: string // latest streamed text, while running
+      /** A teammate (another agent, called with `ask_teammate`), not a helper. */
+      teammate?: boolean
+      /** The teammate's agent id, once its run says so. */
+      agentId?: string
+      /** The teammate message `live` is streaming. */
+      liveId?: string
       tools: ToolItem[]
       /** Wall-clock bounds of a live run; unknown for a reloaded session. */
       startedAt?: number
@@ -167,7 +173,7 @@ export function fromWire(messages: WireMessage[]): TranscriptItem[] {
         })
       }
       for (const call of m.tool_calls) {
-        if (call.name === 'task') {
+        if (call.name === 'task' || call.name === ASK_TEAMMATE) {
           const task = subagentFor(call)
           tasks.set(call.id, task)
           items.push(task)
@@ -201,7 +207,24 @@ export function fromWire(messages: WireMessage[]): TranscriptItem[] {
   return items
 }
 
-function subagentFor(call: ToolCallRef): Extract<TranscriptItem, { kind: 'subagent' }> {
+/** The tool one agent hands work to another with (`agents/delegation.py`). */
+export const ASK_TEAMMATE = 'ask_teammate'
+
+type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
+
+function subagentFor(call: ToolCallRef): SubagentItem {
+  if (call.name === ASK_TEAMMATE) {
+    return {
+      kind: 'subagent',
+      id: call.id,
+      // The name or id the lead wrote; the teammate's own events carry its id.
+      name: String(call.args.teammate ?? 'teammate'),
+      description: String(call.args.message ?? ''),
+      status: 'running',
+      teammate: true,
+      tools: []
+    }
+  }
   return {
     kind: 'subagent',
     id: call.id,
@@ -212,19 +235,75 @@ function subagentFor(call: ToolCallRef): Extract<TranscriptItem, { kind: 'subage
   }
 }
 
+/**
+ * A teammate's own events, passed up inside the lead's run (`event.via` is
+ * the lead's call). They fill in the teammate's entry: its steps, and its
+ * reply as it is written.
+ */
+function reduceTeammate(items: TranscriptItem[], event: CoderEvent): TranscriptItem[] {
+  const i = items.findIndex((it) => it.kind === 'subagent' && it.id === event.via)
+  if (i < 0) return items
+  const mate = items[i] as SubagentItem
+  const put = (next: SubagentItem): TranscriptItem[] => {
+    const copy = items.slice()
+    copy[i] = { ...next, agentId: event.teammate ?? next.agentId }
+    return copy
+  }
+  switch (event.type) {
+    case 'message.delta': {
+      // Only what the teammate itself says is its reply; its helpers stay quiet.
+      if (event.agent !== event.teammate || !event.text) return items
+      const fresh = mate.liveId !== event.message_id
+      return put({
+        ...mate,
+        live: (fresh ? '' : (mate.live ?? '')) + event.text,
+        liveId: event.message_id
+      })
+    }
+    case 'message.completed':
+      if (event.agent !== event.teammate || !event.text) return items
+      return put({ ...mate, live: event.text, liveId: event.message_id })
+    case 'tool.call':
+      if (mate.tools.some((t) => t.id === event.call_id)) return items
+      return put({
+        ...mate,
+        tools: [
+          ...mate.tools,
+          { kind: 'tool', id: event.call_id, name: event.name, args: event.args, status: 'running' }
+        ]
+      })
+    case 'tool.result': {
+      const k = mate.tools.findIndex((t) => t.id === event.call_id)
+      if (k < 0) return items
+      const tools = mate.tools.slice()
+      tools[k] = {
+        ...tools[k],
+        status: event.status,
+        output: event.output,
+        truncated: event.truncated,
+        durationMs: event.duration_ms
+      }
+      return put({ ...mate, tools })
+    }
+    default:
+      return items
+  }
+}
+
 /** Apply one stream event to the transcript. Pure: returns new arrays.
  * `main` is the agent whose messages are the conversation; others are subagents. */
 export function reduce(items: TranscriptItem[], event: CoderEvent, main = 'coder'): TranscriptItem[] {
+  if (event.via) return reduceTeammate(items, event)
   const isMain = (agent: string): boolean => agent === main
   const runningTask = (agent: string): number => {
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i]
-      if (it.kind === 'subagent' && it.status === 'running' && (it.name === agent || agent === 'subagent'))
-        return i
+      if (it.kind !== 'subagent' || it.teammate || it.status !== 'running') continue
+      if (it.name === agent || agent === 'subagent') return i
     }
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i]
-      if (it.kind === 'subagent' && it.status === 'running') return i
+      if (it.kind === 'subagent' && !it.teammate && it.status === 'running') return i
     }
     return -1
   }
@@ -283,7 +362,7 @@ export function reduce(items: TranscriptItem[], event: CoderEvent, main = 'coder
     case 'tool.call': {
       if (items.some((it) => (it.kind === 'tool' || it.kind === 'subagent') && it.id === event.call_id))
         return items // a resumed run replays the call that paused it
-      if (event.name === 'task' && isMain(event.agent)) {
+      if ((event.name === 'task' || event.name === ASK_TEAMMATE) && isMain(event.agent)) {
         const task = subagentFor({ id: event.call_id, name: event.name, args: event.args })
         return [...items, { ...task, startedAt: Date.now() }]
       }
@@ -323,6 +402,7 @@ export function reduce(items: TranscriptItem[], event: CoderEvent, main = 'coder
             status: event.status === 'ok' ? 'done' : 'error',
             summary: event.output,
             live: undefined,
+            liveId: undefined,
             finishedAt: Date.now()
           })
         return items
@@ -835,6 +915,8 @@ function draftSession(
     project_id: projectId,
     agent_id: 'coder',
     parent_session_id: null,
+    group_id: null,
+    members: null,
     title: '',
     model,
     mode,

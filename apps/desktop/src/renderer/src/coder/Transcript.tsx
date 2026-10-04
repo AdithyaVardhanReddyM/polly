@@ -3,6 +3,7 @@ import {
   ChevronRight,
   CircleAlert,
   Copy,
+  CornerDownRight,
   Info,
   Lightbulb,
   SquareArrowOutUpRight,
@@ -12,6 +13,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState
 import type { AgentSummary, ApprovalRequired, Source } from '../../../shared/contracts'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { type RunState, type ToolItem, type TranscriptItem, useCoder } from '../store/coder'
+import { findAgent, useRoster } from '../store/roster'
 import { ApprovalCard } from './ApprovalCard'
 import { type Subagent, crewMember, crewOf, isBusy, roleOf, title } from './crew'
 import { DiffView } from './DiffView'
@@ -48,11 +50,13 @@ type Block =
   | { kind: 'user'; id: string; text: string }
   | { kind: 'text'; id: string; item: Assistant; last: boolean }
   | { kind: 'steps'; id: string; steps: Step[] }
+  | { kind: 'mate'; id: string; item: Subagent }
   | { kind: 'notice'; id: string; item: Extract<TranscriptItem, { kind: 'notice' }> }
 
 /**
  * Turn the flat item list into what a reader follows: the agent's prose, and
- * between it, runs of steps (its thinking, tool calls and delegations).
+ * between it, runs of steps (its thinking, tool calls and delegations). A
+ * teammate's work is a message of its own, from that teammate.
  */
 function toBlocks(items: TranscriptItem[]): Block[] {
   const blocks: Block[] = []
@@ -86,7 +90,10 @@ function toBlocks(items: TranscriptItem[]): Block[] {
         step({ kind: 'tool', id: it.id, tool: it })
         break
       case 'subagent':
-        step({ kind: 'subagent', id: it.id, item: it })
+        if (it.teammate) {
+          group = null
+          blocks.push({ kind: 'mate', id: it.id, item: it })
+        } else step({ kind: 'subagent', id: it.id, item: it })
         break
     }
   }
@@ -111,7 +118,8 @@ export function TranscriptView({
   approval = null,
   sources = [],
   footer,
-  agent
+  agent,
+  speakers = false
 }: {
   items: TranscriptItem[]
   run: RunState
@@ -121,6 +129,8 @@ export function TranscriptView({
   agent?: AvatarAgent
   /** Shown after the last message (a scorecard, a report). */
   footer?: React.ReactNode
+  /** Always say who is talking (a group); otherwise only once a teammate joins in. */
+  speakers?: boolean
 }): React.JSX.Element {
   const scroller = useRef<HTMLDivElement>(null)
   const [pinned, setPinned] = useState(true)
@@ -147,26 +157,43 @@ export function TranscriptView({
   const lastBlock = blocks[blocks.length - 1]
   const crew = crewOf(items)
   const busy = running && isBusy(crew)
+  const agents = useRoster((s) => s.agents)
+  // With more than one agent talking, each stretch of the lead's turn is signed.
+  const signed = !!agent && (speakers || blocks.some((b) => b.kind === 'mate'))
+  const speaks = (i: number): boolean => {
+    const b = blocks[i]
+    if (!signed || (b.kind !== 'text' && b.kind !== 'steps')) return false
+    const before = blocks[i - 1]
+    return !before || (before.kind !== 'text' && before.kind !== 'steps')
+  }
+  const waitingOn = (ref: string): string => findAgent(agents, ref)?.name ?? title(ref)
 
   return (
     <CitationContext.Provider value={sources}>
       <div className="transcript" ref={scroller}>
         <div className="transcript-inner">
-          {blocks.map((b) => {
+          {blocks.map((b, i) => {
+            const speaker = speaks(i) && agent && <Speaker key={`by-${b.id}`} agent={agent} />
             switch (b.kind) {
               case 'user':
                 return <UserMessage key={b.id} text={b.text} />
               case 'text':
-                return (
+                return [
+                  speaker,
                   <AssistantText
                     key={b.id}
                     text={b.item.text}
                     streaming={b.item.streaming}
                     actions={b.last && !b.item.streaming}
                   />
-                )
+                ]
               case 'steps':
-                return <StepGroup key={b.id} steps={b.steps} live={running && b === lastBlock} />
+                return [
+                  speaker,
+                  <StepGroup key={b.id} steps={b.steps} live={running && b === lastBlock} />
+                ]
+              case 'mate':
+                return <MateMessage key={b.id} item={b.item} lead={agent} />
               case 'notice':
                 return <Notice key={b.id} tone={b.item.tone} text={b.item.text} />
             }
@@ -174,7 +201,9 @@ export function TranscriptView({
           {busy ? (
             <CrewBoard lead={agent} crew={crew} seconds={seconds} />
           ) : (
-            running && <Working seconds={seconds} label={activity(items)} agent={agent} />
+            running && (
+              <Working seconds={seconds} label={activity(items, waitingOn)} agent={agent} />
+            )
           )}
           {approval && <ApprovalCard approval={approval} />}
           {footer}
@@ -197,9 +226,40 @@ export function TranscriptView({
 }
 
 function UserMessage({ text }: { text: string }): React.JSX.Element {
+  const agents = useRoster((s) => s.agents)
   return (
     <div className="msg-user">
-      <div className="bubble">{text}</div>
+      <div className="bubble">{withMentions(text, agents)}</div>
+    </div>
+  )
+}
+
+/** The user's text, with each `@Name` of a known agent set off. */
+function withMentions(text: string, agents: AgentSummary[]): React.ReactNode {
+  if (!text.includes('@') || agents.length === 0) return text
+  // Longest names first, so "@Deep Research" is not read as "@Deep".
+  const names = agents
+    .map((a) => a.name)
+    .sort((a, b) => b.length - a.length)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const parts = text.split(new RegExp(`(@(?:${names.join('|')}))(?![\\w-])`, 'gi'))
+  return parts.map((part, i) =>
+    i % 2 ? (
+      <span key={i} className="mention">
+        {part}
+      </span>
+    ) : (
+      part
+    )
+  )
+}
+
+/** Who is talking, above a stretch of the lead's turn. */
+function Speaker({ agent }: { agent: AvatarAgent }): React.JSX.Element {
+  return (
+    <div className="speaker">
+      <AgentAvatar agent={agent} size={22} />
+      <b>{agent.name}</b>
     </div>
   )
 }
@@ -321,7 +381,7 @@ function useRunClock(running: boolean): number {
 const capitalise = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** What the agent is doing right now, in a few words. */
-function activity(items: TranscriptItem[]): string {
+function activity(items: TranscriptItem[], nameOf: (ref: string) => string): string {
   const last = items[items.length - 1]
   if (!last || last.kind === 'user') return 'Thinking'
   if (last.kind === 'assistant') return last.streaming ? (last.text ? 'Writing' : 'Thinking') : 'Working'
@@ -330,6 +390,7 @@ function activity(items: TranscriptItem[]): string {
     return `${meta.verb} ${meta.target}`.trim()
   }
   if (last.kind === 'subagent' && last.status === 'running') {
+    if (last.teammate) return `Waiting on ${nameOf(last.agentId ?? last.name)}`
     const step = last.tools[last.tools.length - 1]
     if (step?.status === 'running') {
       const meta = toolMeta(step.name, step.args)
@@ -478,6 +539,84 @@ function CrewCard({
         <div className="crew-brief" title={member.description}>
           {member.description}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------- teammates ----------
+
+/**
+ * A teammate's turn: another agent the lead handed work to. It reads as that
+ * agent's own message, under what the lead asked of it, with the steps it
+ * took folded away.
+ */
+function MateMessage({ item, lead }: { item: Subagent; lead?: AvatarAgent }): React.JSX.Element {
+  const agents = useRoster((s) => s.agents)
+  const now = useNow()
+  const [asked, setAsked] = useState(false)
+  const running = item.status === 'running'
+  const [steps, setSteps] = useState(running)
+  useEffect(() => {
+    setSteps(running)
+  }, [running])
+
+  const who: AvatarAgent = findAgent(agents, item.agentId ?? item.name) ?? crewMember(item.name, lead)
+  const text = (running ? item.live : item.summary) ?? ''
+  const shown = useSmoothText(text, running)
+  const typing = running && !!text
+  const count = item.tools.length
+  const until = item.finishedAt ?? now
+  const elapsed = item.startedAt ? Math.max(0, Math.floor((until - item.startedAt) / 1000)) : 0
+
+  return (
+    <div className={`mate is-${item.status}`}>
+      <span className="mate-avatar" aria-hidden>
+        <AgentAvatar agent={who} size={30} motion={running ? 'fast' : 'none'} />
+      </span>
+      <div className="mate-body">
+        <div className="mate-head">
+          <b>{who.name}</b>
+          {running ? (
+            <span className="mate-state shimmer">{memberActivity(item)}</span>
+          ) : (
+            item.status === 'error' && <span className="mate-state is-error">Could not finish</span>
+          )}
+          {elapsed >= 1 && <span className="working-time">{formatElapsed(elapsed)}</span>}
+        </div>
+        {item.description && (
+          <button
+            className={asked ? 'mate-brief is-open' : 'mate-brief'}
+            aria-expanded={asked}
+            title={asked ? 'Show less' : 'Show the whole brief'}
+            onClick={() => setAsked(!asked)}
+          >
+            <CornerDownRight />
+            <span>
+              <i>{lead?.name ?? 'The lead'} asked</i> {item.description}
+            </span>
+          </button>
+        )}
+        {count > 0 && (
+          <div className="steps mate-steps">
+            <button
+              className={steps ? 'step-summary is-open' : 'step-summary'}
+              aria-expanded={steps}
+              onClick={() => setSteps(!steps)}
+            >
+              <span>
+                {count} step{count === 1 ? '' : 's'}
+              </span>
+              <ChevronRight className={steps ? 'chev is-open' : 'chev'} />
+            </button>
+            {steps && item.tools.map((t) => <ToolCard key={t.id} tool={t} compact />)}
+          </div>
+        )}
+        {shown && (
+          <div className={typing ? 'msg-assistant mate-text is-streaming' : 'msg-assistant mate-text'}>
+            <Markdown text={shown} />
+          </div>
+        )}
       </div>
     </div>
   )

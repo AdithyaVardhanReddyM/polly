@@ -5,6 +5,7 @@ import type { ServerState } from '../App'
 import { api } from '../api'
 import { shortTime } from '../coder/toolMeta'
 import { PageHead } from '../components/PageHead'
+import { useRoster } from '../store/roster'
 import { type StageArt, useStageArt } from '../components/StageArt'
 import { type ThemePref, useTheme } from '../theme'
 
@@ -24,6 +25,8 @@ export function Settings({ server, agents, onRecheck }: Props): React.JSX.Elemen
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [theme, setTheme] = useTheme()
   const [art, setArt] = useStageArt()
+  const collaboration = useRoster((s) => s.open)
+  const setCollaboration = useRoster((s) => s.setOpen)
 
   useEffect(() => {
     void window.polly?.appInfo().then((r) => r.ok && setInfo(r.data))
@@ -64,6 +67,30 @@ export function Settings({ server, agents, onRecheck }: Props): React.JSX.Elemen
       </section>
 
       <MemorySection agents={agents} />
+
+      <section>
+        <div className="section-head">
+          <h2>Collaboration</h2>
+          <span>How your agents work together.</span>
+        </div>
+        <div className="list">
+          <label className="row is-toggle">
+            <div className="row-body">
+              <div className="row-title">Open collaboration</div>
+              <div className="row-why">
+                Every agent can hand work to any other. When this is off, an agent calls only on the
+                teammates you picked for it, on the Agents page or in a conversation.
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              className="switch"
+              checked={collaboration}
+              onChange={(e) => void setCollaboration(e.target.checked)}
+            />
+          </label>
+        </div>
+      </section>
 
       <section>
         <div className="section-head">

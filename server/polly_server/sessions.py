@@ -4,6 +4,9 @@ A Coder session lives inside a project; research and review sessions may
 have no project at all, and a change-research session points back at the
 Coder session it reports on (`parent_session_id`).
 
+A conversation in a group (`group_id`) is a session with the agent that leads
+the group; the other members join as its teammates.
+
 A session is a LangGraph thread (`thread_id == session.id`) plus the bits
 the app needs without replaying the thread: title, model, mode, usage and
 status. Each lives in `<data_dir>/sessions/<id>/session.json`; the same folder
@@ -49,6 +52,12 @@ class Session(BaseModel):
     agent_id: str = "coder"
     # The session this one was started from (research on a Coder change).
     parent_session_id: str | None = None
+    # The group this conversation belongs to (`agents/groups.py`); `agent_id`
+    # is then the agent that leads it.
+    group_id: str | None = None
+    # The teammates the user picked for this conversation; null follows the
+    # agent's own team (`agents/team.py`).
+    members: list[str] | None = None
     title: str = ""
     model: str
     mode: Mode = "supervised"
@@ -81,6 +90,8 @@ def create(
     title: str = "",
     agent_id: str = "coder",
     parent_session_id: str | None = None,
+    group_id: str | None = None,
+    members: list[str] | None = None,
 ) -> Session:
     now = time.time()
     session = Session(
@@ -88,6 +99,8 @@ def create(
         project_id=project_id,
         agent_id=agent_id,
         parent_session_id=parent_session_id,
+        group_id=group_id,
+        members=members,
         title=title,
         model=model,
         mode=mode,
@@ -140,9 +153,18 @@ def list_for(project_id: str, agent_id: str = "coder") -> list[Session]:
     return [s for s in _all() if s.project_id == project_id and s.agent_id == agent_id]
 
 
-def list_agent(agent_id: str) -> list[Session]:
-    """Top-level sessions with an agent, across projects."""
-    return [s for s in _all() if s.agent_id == agent_id and s.parent_session_id is None]
+def list_agent(agent_id: str, *, groups: bool = False) -> list[Session]:
+    """Top-level sessions with an agent, across projects. The group
+    conversations it leads are listed with their group, unless `groups`."""
+    return [
+        s
+        for s in _all()
+        if s.agent_id == agent_id and s.parent_session_id is None and (groups or s.group_id is None)
+    ]
+
+
+def list_group(group_id: str) -> list[Session]:
+    return [s for s in _all() if s.group_id == group_id]
 
 
 def list_children(parent_id: str) -> list[Session]:

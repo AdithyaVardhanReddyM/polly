@@ -13,6 +13,7 @@ from polly_server import __version__, persistence, sandbox
 from polly_server.api.routers import (
     agents,
     design,
+    groups,
     integrations,
     memory,
     models,
@@ -47,6 +48,7 @@ app.add_middleware(
 
 app.include_router(models.router)
 app.include_router(agents.router)
+app.include_router(groups.router)
 app.include_router(memory.router)
 app.include_router(projects.router)
 app.include_router(sessions.router)

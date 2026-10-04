@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from polly_server import model_registry, sandbox, sessions
-from polly_server.agents import builders, catalog, custom, drafting
+from polly_server.agents import builders, catalog, custom, drafting, groups, team
 from polly_server.api.schemas import (
     AgentConfig,
     AgentCreate,
@@ -13,6 +13,8 @@ from polly_server.api.schemas import (
     AgentList,
     AgentPatch,
     AgentSummary,
+    AgentTeammatesIn,
+    Collaboration,
 )
 from polly_server.coder.runs import manager
 from polly_server.config import settings
@@ -49,6 +51,20 @@ def _set_integrations(agent_id: str, slugs: list[str]) -> None:
         raise HTTPException(422, str(exc)) from None
 
 
+def _set_teammates(agent_id: str, ids: list[str]) -> None:
+    try:
+        team.set_team(agent_id, ids)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+async def _drop_session(session_id: str) -> None:
+    await manager.cancel(session_id)
+    builders.forget(session_id)
+    sandbox.forget(session_id)
+    sessions.delete(session_id)
+
+
 @router.get("/agents", response_model=AgentList)
 def list_agents() -> AgentList:
     return AgentList(agents=[AgentSummary.of(a) for a in catalog.everyone() if builders.listed(a)])
@@ -58,12 +74,17 @@ def list_agents() -> AgentList:
 def create_agent(body: AgentCreate) -> AgentSummary:
     """Make a custom agent."""
     _check_model(body.model)
-    fields = body.model_dump(exclude={"integrations"})
+    fields = body.model_dump(exclude={"integrations", "teammates"})
     fields["name"] = body.name.strip()
     if not fields["name"]:
         raise HTTPException(422, "an agent needs a name")
+    try:
+        team.check(body.teammates)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
     agent = custom.create(**fields)
     _set_integrations(agent.id, body.integrations)
+    _set_teammates(agent.id, body.teammates)
     return AgentSummary.of(agent.to_spec())
 
 
@@ -94,27 +115,31 @@ def get_agent_config(agent_id: str) -> AgentConfig:
 def update_agent(agent_id: str, body: AgentPatch) -> AgentSummary:
     _custom(agent_id)
     _check_model(body.model)
-    changes = body.model_dump(exclude_none=True, exclude={"integrations"})
+    changes = body.model_dump(exclude_none=True, exclude={"integrations", "teammates"})
     if "name" in changes:
         changes["name"] = changes["name"].strip()
         if not changes["name"]:
             raise HTTPException(422, "an agent needs a name")
     if body.integrations is not None:
         _set_integrations(agent_id, body.integrations)
+    if body.teammates is not None:
+        _set_teammates(agent_id, body.teammates)
     agent = custom.update(agent_id, **changes)
     return AgentSummary.of(agent.to_spec())
 
 
 @router.delete("/agents/{agent_id}", status_code=204)
 async def delete_agent(agent_id: str) -> None:
-    """Delete a custom agent and its conversations."""
+    """Delete a custom agent and its conversations. It leaves the teams and
+    groups it was on; a group left with one agent goes too."""
     _custom(agent_id)
-    for session in sessions.list_agent(agent_id):
-        await manager.cancel(session.id)
-        builders.forget(session.id)
-        sandbox.forget(session.id)
-        sessions.delete(session.id)
+    for session in sessions.list_agent(agent_id, groups=True):
+        await _drop_session(session.id)
+    for group_id in groups.without(agent_id):
+        for session in sessions.list_group(group_id):
+            await _drop_session(session.id)
     assignments.clear(agent_id)
+    team.clear(agent_id)
     custom.delete(agent_id)
 
 
@@ -124,3 +149,24 @@ def set_agent_integrations(agent_id: str, body: AgentIntegrationsIn) -> AgentSum
     spec = _listed(agent_id)
     _set_integrations(agent_id, body.integrations)
     return AgentSummary.of(spec)
+
+
+@router.put("/agents/{agent_id}/teammates", response_model=AgentSummary)
+def set_agent_teammates(agent_id: str, body: AgentTeammatesIn) -> AgentSummary:
+    """Choose which agents an agent may hand work to."""
+    spec = _listed(agent_id)
+    if not team.can_lead(spec):
+        raise HTTPException(400, f"{spec.name} is not available yet")
+    _set_teammates(agent_id, body.teammates)
+    return AgentSummary.of(spec)
+
+
+@router.get("/collaboration", response_model=Collaboration)
+def get_collaboration() -> Collaboration:
+    return Collaboration(open=team.is_open())
+
+
+@router.put("/collaboration", response_model=Collaboration)
+def set_collaboration(body: Collaboration) -> Collaboration:
+    """Open collaboration: let every agent call on every other."""
+    return Collaboration(open=team.set_open(body.open))

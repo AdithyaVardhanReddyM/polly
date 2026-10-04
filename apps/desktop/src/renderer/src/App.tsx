@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AgentSummary, ServerHealth } from '../../shared/contracts'
 import { api } from './api'
+import { GroupDialog } from './components/GroupDialog'
 import { homeOf, SECTIONS, Sidebar, type Section, useSidebarCollapsed } from './components/Sidebar'
 import { Agents } from './pages/Agents'
 import { Builder } from './pages/Builder'
@@ -8,14 +9,16 @@ import { Chat } from './pages/Chat'
 import { Coder } from './pages/Coder'
 import { Computers } from './pages/Computers'
 import { Design } from './pages/Design'
+import { Group } from './pages/Group'
 import { Home } from './pages/Home'
 import { Integrations } from './pages/Integrations'
 import { Research } from './pages/Research'
 import { PR_URL, Review } from './pages/Review'
 import { Settings } from './pages/Settings'
 import { useDesign } from './design/session'
-import { useChat, useResearch, useReview } from './store/agentSession'
+import { useChat, useGroupChat, useResearch, useReview } from './store/agentSession'
 import { useCoder } from './store/coder'
+import { useRoster } from './store/roster'
 
 export interface ServerState {
   health: ServerHealth | null
@@ -45,6 +48,9 @@ export default function App(): React.JSX.Element {
   const [editing, setEditing] = useState<string | null>(
     () => window.location.hash.match(/^#builder\/([\w-]+)/)?.[1] ?? null
   )
+  const groups = useRoster((s) => s.groups)
+  // The group dialog: `id` is the group being changed, null a new one.
+  const [groupDialog, setGroupDialog] = useState<{ id: string | null } | null>(null)
 
   const refresh = useCallback(async () => {
     setServer((s) => ({ ...s, checking: true }))
@@ -55,6 +61,8 @@ export default function App(): React.JSX.Element {
       checking: false
     })
     if (catalog.ok) setAgents(catalog.data)
+    // Groups follow the agents: deleting one reshapes the groups it was in.
+    void useRoster.getState().load()
   }, [])
 
   useEffect(() => {
@@ -70,8 +78,14 @@ export default function App(): React.JSX.Element {
 
   // The chat workspace covers whichever agents the user has made.
   useEffect(() => {
+    useRoster.getState().setAgents(agents)
     useChat.getState().setAgentIds(agents.filter((a) => a.custom).map((a) => a.id))
   }, [agents])
+
+  // And the group workspace, whichever groups.
+  useEffect(() => {
+    useGroupChat.getState().setAgentIds(groups.map((g) => g.id))
+  }, [groups])
 
   const byId = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
   const runnable = useMemo(
@@ -79,7 +93,9 @@ export default function App(): React.JSX.Element {
     [agents]
   )
 
-  const flush = ['Coder', 'Design', 'Research', 'Review', 'Chat', 'Builder'].includes(section)
+  const flush = ['Coder', 'Design', 'Research', 'Review', 'Chat', 'Group', 'Builder'].includes(
+    section
+  )
 
   const build = (id: string | null): void => {
     setEditing(id)
@@ -181,6 +197,29 @@ export default function App(): React.JSX.Element {
     setSection(home)
   }
 
+  /** A group's workspace as it was left: its last conversation, or a new one. */
+  const openGroup = (id: string, fresh = false): void => {
+    const chat = useGroupChat.getState()
+    // A group made a moment ago is not in the store's list until the next render.
+    chat.setAgentIds([...new Set([...chat.agentIds, id])])
+    const store = useGroupChat.getState()
+    if (fresh || (store.session?.group_id ?? store.agentId) !== id || !store.session) {
+      const last = fresh ? undefined : store.sessions.find((s) => s.group_id === id)
+      if (last) void store.open(last.id)
+      else {
+        store.newSession()
+        store.setAgent(id)
+      }
+    }
+    setSection('Group')
+  }
+
+  /** Change the agents an agent hands work to, from its card. */
+  const setTeam = async (id: string, teammates: string[]): Promise<void> => {
+    const res = await api.team.set(id, teammates)
+    if (res.ok) setAgents((all) => all.map((a) => (a.id === id ? res.data : a)))
+  }
+
   const searchReady = server.health?.search.configured ?? true
 
   return (
@@ -191,6 +230,8 @@ export default function App(): React.JSX.Element {
         onSelect={setSection}
         agents={agents}
         onChat={chatWith}
+        onGroup={openGroup}
+        onNewGroup={() => setGroupDialog({ id: null })}
         collapsed={collapsed}
         onToggle={toggleSidebar}
       />
@@ -213,6 +254,13 @@ export default function App(): React.JSX.Element {
         {section === 'Chat' && (
           <Chat agents={agents} server={server} onEdit={build} onCreate={() => build(null)} />
         )}
+        {section === 'Group' && (
+          <Group
+            agents={agents}
+            onEdit={(id) => setGroupDialog({ id })}
+            onCreate={() => setGroupDialog({ id: null })}
+          />
+        )}
         {section === 'Agents' && (
           <Agents
             agents={agents}
@@ -220,6 +268,9 @@ export default function App(): React.JSX.Element {
             openable={runnable}
             onOpen={openAgent}
             onBuild={build}
+            onTeam={(id, teammates) => void setTeam(id, teammates)}
+            onOpenGroup={openGroup}
+            onEditGroup={(id) => setGroupDialog({ id })}
           />
         )}
         {section === 'Builder' && (
@@ -251,6 +302,23 @@ export default function App(): React.JSX.Element {
           <Settings server={server} agents={agents} onRecheck={refresh} />
         )}
       </main>
+      {groupDialog && (
+        <GroupDialog
+          key={groupDialog.id ?? 'new'}
+          group={groups.find((g) => g.id === groupDialog.id) ?? null}
+          onClose={() => setGroupDialog(null)}
+          onSaved={(group) => {
+            const made = groupDialog.id === null
+            setGroupDialog(null)
+            // A new group opens ready to talk; a changed one stays where the user is.
+            if (made) openGroup(group.id, true)
+          }}
+          onDeleted={() => {
+            setGroupDialog(null)
+            if (section === 'Group') setSection('Agents')
+          }}
+        />
+      )}
     </div>
   )
 }

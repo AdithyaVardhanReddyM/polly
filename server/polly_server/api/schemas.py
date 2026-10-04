@@ -7,8 +7,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from polly_server.agents import builders
+from polly_server.agents import builders, team
 from polly_server.agents.custom import CustomAgent
+from polly_server.agents.groups import Group
 from polly_server.agents.spec import AgentSpec, Division, Runtime, Status
 from polly_server.coder.context import Mode
 from polly_server.coder.permissions import Rule
@@ -29,6 +30,10 @@ class AgentSummary(BaseModel):
     # Connected apps the agent may use (Composio toolkit slugs).
     integrations: list[str]
     subagents: list[str]
+    # Other agents it may hand work to (agent ids).
+    teammates: list[str]
+    # Whether other agents can hand work to it.
+    can_join: bool
     computer: bool
     avatar: dict[str, str]
     # Made by the user: can be edited and deleted.
@@ -53,6 +58,8 @@ class AgentSummary(BaseModel):
             tools=list(spec.tools),
             integrations=list(assignments.enabled(spec.id)),
             subagents=[s.name for s in spec.subagents],
+            teammates=list(team.chosen(spec.id)),
+            can_join=team.can_join(spec),
             computer=spec.computer,
             avatar={"seed": spec.id, **spec.avatar},
             custom=spec.division == "custom",
@@ -77,6 +84,7 @@ class AgentCreate(BaseModel):
     memory: bool = True
     avatar: dict[str, str] = Field(default_factory=dict)
     integrations: list[str] = Field(default_factory=list, max_length=100)
+    teammates: list[str] = Field(default_factory=list, max_length=team.MAX_TEAMMATES)
 
 
 class AgentPatch(BaseModel):
@@ -90,16 +98,22 @@ class AgentPatch(BaseModel):
     memory: bool | None = None
     avatar: dict[str, str] | None = None
     integrations: list[str] | None = Field(default=None, max_length=100)
+    teammates: list[str] | None = Field(default=None, max_length=team.MAX_TEAMMATES)
 
 
 class AgentConfig(CustomAgent):
     """A custom agent as the builder edits it."""
 
     integrations: list[str]
+    teammates: list[str]
 
     @classmethod
     def of(cls, agent: CustomAgent) -> AgentConfig:
-        return cls(**agent.model_dump(), integrations=list(assignments.enabled(agent.id)))
+        return cls(
+            **agent.model_dump(),
+            integrations=list(assignments.enabled(agent.id)),
+            teammates=list(team.chosen(agent.id)),
+        )
 
 
 class AgentDraftIn(BaseModel):
@@ -115,6 +129,35 @@ class AgentDraft(BaseModel):
     system_prompt: str
     search: bool
     sandbox: bool
+
+
+# ---------- teams and groups ----------
+
+
+class AgentTeammatesIn(BaseModel):
+    teammates: list[str] = Field(max_length=team.MAX_TEAMMATES)
+
+
+class Collaboration(BaseModel):
+    # Every agent may call on every other, whatever its own team.
+    open: bool
+
+
+class GroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    # Agent ids, the lead included.
+    members: list[str]
+    lead: str
+
+
+class GroupPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=40)
+    members: list[str] | None = None
+    lead: str | None = None
+
+
+class GroupList(BaseModel):
+    groups: list[Group]
 
 
 class MemoryIn(BaseModel):
@@ -209,6 +252,10 @@ class SessionCreate(BaseModel):
     # The Coder needs a project; the other agents run without one.
     project_id: str | None = None
     agent_id: str = "coder"
+    # A conversation in a group: its lead is the agent, whatever `agent_id` says.
+    group_id: str | None = None
+    # The teammates for this conversation; null follows the agent's own team.
+    members: list[str] | None = None
     model: str | None = None
     mode: Mode | None = None
     title: str = ""
@@ -218,6 +265,7 @@ class SessionPatch(BaseModel):
     model: str | None = None
     mode: Mode | None = None
     title: str | None = None
+    members: list[str] | None = None
 
 
 class SessionList(BaseModel):
@@ -226,6 +274,8 @@ class SessionList(BaseModel):
 
 class MessageIn(BaseModel):
     content: str = Field(min_length=1)
+    # Agents the user addressed with `@Name`; they join the conversation's team.
+    mentions: list[str] = Field(default_factory=list, max_length=team.MAX_TEAMMATES)
 
 
 class Decision(BaseModel):

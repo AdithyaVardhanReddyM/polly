@@ -251,7 +251,10 @@ class RunManager:
                         event["replayed"] = True
                     else:
                         usage = usage.add(event)
+                    # A teammate's usage (`delegation.py`) counts towards the
+                    # session but says nothing about the lead's context.
                     context_tokens = int(event.get("context_tokens") or context_tokens)
+                    event["context_tokens"] = context_tokens
                     event["session_total"] = usage.model_dump()
                     event["context_window"] = _context_window(session.model)
                 if event["type"] == "approval.required":

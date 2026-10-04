@@ -6,8 +6,11 @@ None of them touch the user's disk. Deep agents keep their scratch files in
 graph state (the Deep Agents default backend), or in a ConTree sandbox when
 the agent runs code (`sandbox.py`). The only tools they get are read-only
 (web, GitHub) plus the one that hands in their result, the apps the user
-connected and allowed them (`integrations/`), and the shared memory
-(`memory.py`).
+connected and allowed them (`integrations/`), the shared memory
+(`memory.py`) and `ask_teammate`, when they have teammates (`team.py`).
+
+An agent is built either to lead a session, or as a teammate in another
+agent's session (`as_agent`, see `delegation.py`).
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from polly_server import memory, model_registry, sandbox
 from polly_server import tools as tool_registry
-from polly_server.agents import catalog, runtime
+from polly_server.agents import catalog, delegation, runtime, team
 from polly_server.agents.spec import AgentSpec
 from polly_server.coder.context import CoderContext
 from polly_server.config import settings
@@ -90,22 +93,41 @@ def build_agent(
     strong_model: BaseChatModel | None = None,
     checkpointer: Any | None = None,
     use_cache: bool = True,
+    as_agent: str | None = None,
 ) -> CompiledStateGraph:
-    spec = catalog.get(session.agent_id)
+    """The agent that leads `session`, or with `as_agent`, a teammate at work
+    in it: on its own model, sharing the session's sandbox."""
+    agent_id = as_agent or session.agent_id
+    spec = catalog.get(agent_id)
     if spec is None or spec.status != "ready" or spec.id == "coder":
-        raise LookupError(f"{session.agent_id!r} is not an agent Polly can run here")
+        raise LookupError(f"{agent_id!r} is not an agent Polly can run here")
 
-    # Connecting an app, changing what the agent may use or editing a custom
-    # agent rebuilds it on the next turn.
+    # Work goes out from the lead and comes back to it: a teammate has no team.
+    mates = team.roster(session) if as_agent is None else ()
+    model_id = (session.model if as_agent is None else "") or default_model(spec.id)
+
+    # Connecting an app, changing what the agent may use, editing a custom
+    # agent or changing the team rebuilds it on the next turn.
     apps = assignments.active(spec.id)
     made_as = (spec.system_prompt, spec.tools, spec.sandbox, spec.memory)
-    key = (session.id, session.model, dt.date.today().isoformat(), apps, made_as)
+    key = (
+        session.id,
+        spec.id,
+        model_id,
+        dt.date.today().isoformat(),
+        apps,
+        made_as,
+        team.signature(session, mates),
+    )
     if use_cache and key in _cache:
         return _cache[key]
 
-    connected = composio.tools_for(apps)
+    connected = list(composio.tools_for(apps))
     spec = _resolve(spec, apps if connected else ())
-    main = model or chat_model(model=session.model or default_model(spec.id))
+    if mates:
+        connected.append(delegation.tool_for(session, mates))
+        spec = replace(spec, system_prompt=f"{spec.system_prompt}\n\n{team.prompt(session, mates)}")
+    main = model or chat_model(model=model_id)
     options: dict[str, Any] = {
         "checkpointer": checkpointer or get_checkpointer(),
         # Same shape as the Coder's: the run passes one context to every agent.
@@ -147,6 +169,7 @@ def build_agent(
 def forget(session_id: str) -> None:
     for key in [k for k in _cache if k[0] == session_id]:
         _cache.pop(key, None)
+    delegation.forget(session_id)
 
 
 def needs_search(agent_id: str) -> bool:

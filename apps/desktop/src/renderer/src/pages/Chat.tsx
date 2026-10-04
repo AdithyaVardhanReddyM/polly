@@ -9,6 +9,7 @@ import {
   Plus,
   SquareTerminal,
   TriangleAlert,
+  Users,
   X
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -19,10 +20,12 @@ import { OutputContext } from '../coder/Markdown'
 import { TranscriptView } from '../coder/Transcript'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { Workspace } from '../components/Splitter'
+import { TeamButton } from '../components/Team'
 import { AgentComposer } from '../research/AgentComposer'
 import { AgentRail } from '../research/AgentRail'
 import { SourcesPanel } from '../research/Sources'
 import { useChat } from '../store/agentSession'
+import { joinable, teamOf, useRoster } from '../store/roster'
 
 interface Props {
   agents: AgentSummary[]
@@ -42,6 +45,8 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
   const error = useChat((s) => s.error)
   const clearError = useChat((s) => s.clearError)
   const agentId = useChat((s) => s.agentId)
+  const members = useChat((s) => s.members)
+  const everyone = useRoster((s) => s.open)
   const [panel, setPanel] = useState(true)
   const [base, setBase] = useState<string | null>(null)
 
@@ -76,6 +81,9 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
 
   const empty = items.length === 0 && !session
   const showSources = searches && panel
+  const team = teamOf(agents, agent, members, everyone)
+  // Anyone who can be called on can be addressed: an @ brings them into the chat.
+  const mentionable = joinable(agents).filter((a) => a.id !== agent.id)
 
   return (
     <Workspace
@@ -111,6 +119,7 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
             <span>{agent.name}</span>
           </div>
           <span className={`run-state is-${run}`}>{run === 'running' ? 'Working' : ''}</span>
+          <TeamButton store={useChat} lead={agent} />
           <button className="icon-btn" title={`Edit ${agent.name}`} onClick={() => onEdit(agent.id)}>
             <Pencil />
           </button>
@@ -173,6 +182,11 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
                   {agent.integrations.length === 1 ? '' : 's'}
                 </span>
               )}
+              {team.length > 0 && (
+                <span title={team.map((a) => a.name).join(', ')}>
+                  <Users /> {team.length} teammate{team.length === 1 ? '' : 's'}
+                </span>
+              )}
             </div>
           </div>
         ) : (
@@ -183,6 +197,7 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
 
         <AgentComposer
           store={useChat}
+          mentionable={mentionable}
           placeholder={session ? 'Reply…' : `Message ${agent.name}…`}
         />
       </section>

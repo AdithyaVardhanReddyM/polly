@@ -8,6 +8,8 @@ import type {
   FileChange,
   FileContent,
   FileDiff,
+  Group,
+  GroupFields,
   IntegrationsStatus,
   Memory,
   ModelList,
@@ -96,6 +98,27 @@ export const api = {
   },
   models: () => get<ModelList>('/models'),
 
+  /** Who an agent may hand work to, and whether everyone may call on everyone. */
+  team: {
+    set: (agentId: string, teammates: string[]) =>
+      request<AgentSummary>('PUT', `/agents/${encodeURIComponent(agentId)}/teammates`, {
+        teammates
+      }),
+    collaboration: () => get<{ open: boolean }>('/collaboration'),
+    setCollaboration: (open: boolean) =>
+      request<{ open: boolean }>('PUT', '/collaboration', { open })
+  },
+
+  groups: {
+    list: async (): Promise<Result<Group[]>> => {
+      const res = await get<{ groups: Group[] }>('/groups')
+      return res.ok ? { ok: true, data: res.data.groups } : res
+    },
+    create: (body: GroupFields) => post<Group>('/groups', body),
+    update: (id: string, body: Partial<GroupFields>) => patch<Group>(`/groups/${id}`, body),
+    remove: (id: string) => del(`/groups/${id}`)
+  },
+
   /** The agents people make themselves. */
   custom: {
     create: (body: AgentFields) => post<AgentSummary>('/agents', body),
@@ -148,6 +171,8 @@ export const api = {
     create: (body: {
       project_id?: string | null
       agent_id?: string
+      group_id?: string
+      members?: string[]
       model?: string
       mode?: string
       title?: string
@@ -157,9 +182,16 @@ export const api = {
       const res = await get<{ sessions: Session[] }>(`/sessions${q({ agent_id: agentId })}`)
       return res.ok ? { ok: true, data: res.data.sessions } : res
     },
+    /** The conversations of one group. */
+    listGroup: async (groupId: string): Promise<Result<Session[]>> => {
+      const res = await get<{ sessions: Session[] }>(`/sessions${q({ group_id: groupId })}`)
+      return res.ok ? { ok: true, data: res.data.sessions } : res
+    },
     get: (id: string) => get<Session>(`/sessions/${id}`),
-    update: (id: string, body: { model?: string; mode?: string; title?: string }) =>
-      patch<Session>(`/sessions/${id}`, body),
+    update: (
+      id: string,
+      body: { model?: string; mode?: string; title?: string; members?: string[] }
+    ) => patch<Session>(`/sessions/${id}`, body),
     remove: (id: string) => del(`/sessions/${id}`),
     transcript: (id: string) => get<Transcript>(`/sessions/${id}/messages`),
     cancel: (id: string) => post<{ cancelled: boolean }>(`/sessions/${id}/cancel`),
@@ -238,9 +270,9 @@ export const api = {
 
 /** Bodies for the streaming endpoints (see `sse.ts`). */
 export const streams = {
-  message: (sessionId: string, content: string) => ({
+  message: (sessionId: string, content: string, mentions: string[] = []) => ({
     path: `/sessions/${sessionId}/messages`,
-    body: { content }
+    body: { content, mentions }
   }),
   decisions: (sessionId: string, decisions: Decision[], remember: RememberRule[] = []) => ({
     path: `/sessions/${sessionId}/decisions`,

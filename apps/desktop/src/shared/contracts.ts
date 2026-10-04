@@ -48,6 +48,10 @@ export interface AgentSummary {
   integrations: string[]
   /** Specialists the agent can hand work to. */
   subagents: string[]
+  /** Other agents it may hand work to (agent ids). */
+  teammates: string[]
+  /** Whether other agents can hand work to it. */
+  can_join: boolean
   /** Whether the agent gets its own virtual computer. */
   computer: boolean
   /** DiceBear voxel-bot options; always includes a `seed`. */
@@ -75,6 +79,8 @@ export interface AgentFields {
   memory: boolean
   avatar: Record<string, string>
   integrations: string[]
+  /** Other agents it may hand work to (agent ids). */
+  teammates: string[]
 }
 
 export interface AgentConfig extends AgentFields {
@@ -88,6 +94,19 @@ export type AgentDraft = Pick<
   AgentFields,
   'name' | 'tagline' | 'description' | 'system_prompt' | 'search' | 'sandbox'
 >
+
+/** Agents the user talks to together; a conversation runs with the lead. */
+export interface Group {
+  id: string
+  name: string
+  /** Agent ids, the lead included, in the order they were added. */
+  members: string[]
+  lead: string
+  created_at: number
+  updated_at: number
+}
+
+export type GroupFields = Pick<Group, 'name' | 'members' | 'lead'>
 
 /** One thing Polly remembers about the user; every agent sees them all. */
 export interface Memory {
@@ -196,6 +215,10 @@ export interface Session {
   agent_id: string
   /** Set on change research started from a Coder session. */
   parent_session_id: string | null
+  /** The group this conversation belongs to; `agent_id` is then its lead. */
+  group_id: string | null
+  /** The teammates picked for this conversation; null follows the agent's team. */
+  members: string[] | null
   title: string
   model: string
   mode: PermissionMode
@@ -441,6 +464,10 @@ export interface IntegrationsStatus {
 interface EventBase {
   seq: number
   run_id: string
+  /** Set on a teammate's events: the lead's `ask_teammate` call they belong to. */
+  via?: string
+  /** With `via`: the id of the teammate at work. */
+  teammate?: string
 }
 
 /** An artboard as the Designer's tools report it (`design/document.py`). */

@@ -12,6 +12,7 @@ import {
   Sparkles,
   SquareTerminal,
   Trash2,
+  Users,
   X
 } from 'lucide-react'
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
@@ -22,8 +23,10 @@ import { ModelMenu, Popover } from '../coder/Composer'
 import { ModelLogo } from '../coder/icons'
 import { formatTokens } from '../coder/toolMeta'
 import { AgentAvatar } from '../components/AgentAvatar'
+import { MAX_TEAMMATES } from '../components/Team'
 import { drawBack, drawFront, faceCanvas, strapCanvas } from '../lanyard/badge'
 import { describeModel, useModels } from '../store/models'
+import { joinable, useRoster } from '../store/roster'
 import { Logo } from './Integrations'
 
 // three.js and the physics engine are only needed here: load them with the page.
@@ -39,7 +42,8 @@ const BLANK: AgentFields = {
   sandbox: false,
   memory: true,
   avatar: {},
-  integrations: []
+  integrations: [],
+  teammates: []
 }
 
 /** Starting points for "Write it for me": a label and the sentence it fills in. */
@@ -82,6 +86,9 @@ export function Builder({
   const [base, setBase] = useState<string | null>(null)
   const models = useModels((s) => s.models)
   const loadModels = useModels((s) => s.load)
+  const everyone = useRoster((s) => s.agents)
+  // An agent hands work to others, never to itself.
+  const mates = joinable(everyone).filter((a) => a.id !== agentId)
 
   const set = <K extends keyof AgentFields>(key: K, value: AgentFields[K]): void =>
     setFields((f) => ({ ...f, [key]: value }))
@@ -136,7 +143,9 @@ export function Builder({
     fields.sandbox && 'Sandbox',
     fields.memory && 'Memory',
     fields.integrations.length > 0 &&
-      `${fields.integrations.length} app${fields.integrations.length === 1 ? '' : 's'}`
+      `${fields.integrations.length} app${fields.integrations.length === 1 ? '' : 's'}`,
+    fields.teammates.length > 0 &&
+      `${fields.teammates.length} teammate${fields.teammates.length === 1 ? '' : 's'}`
   ].filter((x): x is string => !!x)
 
   const draft = async (): Promise<void> => {
@@ -188,6 +197,14 @@ export function Builder({
       fields.integrations.includes(slug)
         ? fields.integrations.filter((s) => s !== slug)
         : [...fields.integrations, slug]
+    )
+
+  const toggleMate = (id: string): void =>
+    set(
+      'teammates',
+      fields.teammates.includes(id)
+        ? fields.teammates.filter((m) => m !== id)
+        : [...fields.teammates, id]
     )
 
   const title = fields.name.trim() || (agentId ? 'Agent' : 'New agent')
@@ -465,6 +482,54 @@ export function Builder({
             <button className="link builder-link" onClick={onConnectApps}>
               Connect more apps <ArrowUpRight />
             </button>
+          </Step>
+
+          <Step title="Teammates" hint="Other agents it can hand work to.">
+            {mates.length > 0 ? (
+              <div className="app-grid">
+                {mates.map((a) => {
+                  const on = fields.teammates.includes(a.id)
+                  return (
+                    <button
+                      key={a.id}
+                      className={on ? 'app-card is-on' : 'app-card'}
+                      aria-pressed={on}
+                      disabled={!on && fields.teammates.length >= MAX_TEAMMATES}
+                      onClick={() => toggleMate(a.id)}
+                    >
+                      <span className="ig-card-head">
+                        <AgentAvatar agent={a} size={30} />
+                        <span className="ig-card-title">
+                          <b>{a.name}</b>
+                          <span>{a.custom ? 'Your agent' : 'Built in'}</span>
+                        </span>
+                        <span className={on ? 'ig-connect is-live' : 'ig-connect'}>
+                          {on ? (
+                            <>
+                              <Check /> Added
+                            </>
+                          ) : (
+                            <>
+                              <Plus /> Add
+                            </>
+                          )}
+                        </span>
+                      </span>
+                      <span className="app-card-desc">{a.tagline || a.description}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="app-empty">
+                <Users />
+                <span>No other agents to call on yet.</span>
+              </div>
+            )}
+            <p className="part-note">
+              It decides when to ask a teammate, and the teammate remembers what it did earlier in
+              the conversation.
+            </p>
           </Step>
         </div>
       </div>
