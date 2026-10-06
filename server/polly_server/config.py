@@ -23,6 +23,12 @@ DEFAULT_FAST_MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
 DEFAULT_STRONG_MODEL = "nvidia/Nemotron-3-Ultra-550b-a55b"
 # Looks at screenshots: the Designer's critic.
 DEFAULT_VISION_MODEL = "zai-org/GLM-5.3-Flash"
+# The copilot's eyes: describes the window in front. The fastest vision model
+# on Token Factory; the Designer's critic keeps POLLY_VISION_MODEL.
+DEFAULT_COPILOT_VISION_MODEL = "Qwen/Qwen3.8-27B"
+# Turns text into vectors for knowledge bases and the copilot's recall. The
+# only embedding model Token Factory serves.
+DEFAULT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-8B"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -42,6 +48,7 @@ class Settings:
     fast_model: str
     strong_model: str
     vision_model: str
+    embedding_model: str
 
     sandbox_provider: str
     tavily_api_key: str
@@ -84,6 +91,7 @@ def load() -> Settings:
         fast_model=_env("POLLY_FAST_MODEL", DEFAULT_FAST_MODEL),
         strong_model=_env("POLLY_STRONG_MODEL", DEFAULT_STRONG_MODEL),
         vision_model=_env("POLLY_VISION_MODEL", DEFAULT_VISION_MODEL),
+        embedding_model=_env("POLLY_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
         sandbox_provider=_env("POLLY_SANDBOX", "contree"),
         tavily_api_key=_env("TAVILY_API_KEY"),
         composio_api_key=_env("COMPOSIO_API_KEY"),

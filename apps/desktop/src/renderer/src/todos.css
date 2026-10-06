@@ -1,0 +1,494 @@
+/* ==========================================================================
+   To-dos and reminders, on Home, below the composer.
+   Built on the tokens in styles.css; works in light and dark.
+   ========================================================================== */
+
+.todos {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 30px;
+}
+
+.todos .section-head {
+  margin-bottom: 0;
+}
+
+/* ---------- the add row: white, lifted by a soft shadow; a brand glow on focus ---------- */
+
+.td-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 6px 0 13px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  transition: box-shadow 0.15s;
+}
+
+.td-add:focus-within {
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent);
+}
+
+.td-add-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--faint);
+}
+
+/* the title field only: the picker's fields live in this form too */
+.td-add > input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13.5px;
+}
+
+.td-add > input::placeholder {
+  color: var(--faint);
+}
+
+.td-add > .popover > .icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius);
+}
+
+/* the date it will get, once picked */
+.td-add-when {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 3px 0 9px;
+  border-radius: 12px;
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.td-add-when > svg {
+  width: 12px;
+  height: 12px;
+}
+
+.td-add-clear {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.td-add-clear:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.td-add-clear svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* ---------- the list ---------- */
+
+.td-list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.td-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 7px 8px 7px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.td-row:first-child {
+  border-top: none;
+}
+
+/* a round checkbox: the check shows faintly on hover, filled once done */
+.td-check {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    color 0.12s;
+}
+
+.td-check svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 3;
+}
+
+.td-check:hover {
+  border-color: var(--brand);
+  color: color-mix(in srgb, var(--brand) 60%, transparent);
+}
+
+.td-check:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent);
+}
+
+.td-row.is-done .td-check {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.td-list.is-done .td-row.is-done .td-check {
+  border-color: var(--faint);
+  background: var(--faint);
+  color: var(--surface);
+}
+
+.td-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.td-title {
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.td-row.is-done .td-title {
+  color: var(--faint);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--faint) 70%, transparent);
+}
+
+/* the second line: when it is due (a bell when it reminds), and where it came from */
+.td-sub {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.td-sub > * + *::before {
+  content: '·';
+  margin: 0 6px;
+  color: var(--faint);
+}
+
+.td-when-label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.td-when-label svg {
+  width: 12px;
+  height: 12px;
+}
+
+.td-when-label.is-overdue {
+  color: var(--warn-ink);
+  font-weight: 500;
+}
+
+.td-source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.td-row .td-edit {
+  width: 100%;
+  margin: -3px 0 -3px -8px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent);
+  outline: none;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+/* row actions: there on hover, or while one of them is open */
+.td-actions {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.td-row:hover .td-actions,
+.td-row:focus-within .td-actions,
+.td-row.is-active .td-actions {
+  opacity: 1;
+}
+
+.td-actions .icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+}
+
+.td-undo {
+  flex: none;
+  padding: 0 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* deleted, until the undo runs out */
+.td-row.is-gone {
+  gap: 10px;
+  padding-right: 14px;
+  font-size: 13px;
+  color: var(--faint);
+}
+
+.td-gone {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.td-row.is-gone .link {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* ---------- quiet lines: empty, not loaded, could not save ---------- */
+
+.td-quiet {
+  padding: 0 2px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+.td-quiet.is-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--error-ink);
+}
+
+.td-quiet .icon-btn {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  color: inherit;
+}
+
+.td-quiet .icon-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ---------- done: a disclosure ---------- */
+
+.td-done-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  margin-left: -4px;
+  padding: 0 8px 0 4px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.td-done-toggle:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.td-done-toggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s;
+}
+
+.td-done-toggle.is-open svg {
+  transform: rotate(90deg);
+}
+
+.td-done-toggle span {
+  font-weight: 400;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- the date and reminder picker ---------- */
+
+.menu.td-when {
+  width: 284px;
+  max-height: none;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 12px 0;
+}
+
+.td-when-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.td-when-field > label:not(.td-when-switch) {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.td-when-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.td-when-input input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  outline: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  transition: box-shadow 0.15s;
+}
+
+.td-when-input input:focus,
+.td-when-input input:focus-visible {
+  outline: none;
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent);
+}
+
+.td-when-input input::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.td-when-input .icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius);
+}
+
+/* on the menu's own surface, a shadow alone barely shows in the dark */
+:root[data-theme='dark'] .td-when-input input {
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+}
+
+.td-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.td-quick button {
+  height: 24px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 12px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.td-quick button:hover {
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+}
+
+.td-when-switch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.td-when-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 -12px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .td-done-toggle svg,
+  .td-actions,
+  .td-check {
+    transition: none;
+  }
+}

@@ -12,6 +12,7 @@ import { Design } from './pages/Design'
 import { Group } from './pages/Group'
 import { Home } from './pages/Home'
 import { Integrations } from './pages/Integrations'
+import { Knowledge } from './pages/Knowledge'
 import { Research } from './pages/Research'
 import { PR_URL, Review } from './pages/Review'
 import { Settings } from './pages/Settings'
@@ -76,6 +77,13 @@ export default function App(): React.JSX.Element {
     }
   }, [section])
 
+  // The notch opens sections here ("Copilot settings", "Manage knowledge…") by setting the hash.
+  useEffect(() => {
+    const follow = (): void => setSection(sectionFromHash())
+    window.addEventListener('hashchange', follow)
+    return () => window.removeEventListener('hashchange', follow)
+  }, [])
+
   // The chat workspace covers whichever agents the user has made.
   useEffect(() => {
     useRoster.getState().setAgents(agents)
@@ -93,9 +101,16 @@ export default function App(): React.JSX.Element {
     [agents]
   )
 
-  const flush = ['Coder', 'Design', 'Research', 'Review', 'Chat', 'Group', 'Builder'].includes(
-    section
-  )
+  const flush = [
+    'Coder',
+    'Design',
+    'Research',
+    'Review',
+    'Chat',
+    'Group',
+    'Builder',
+    'Knowledge'
+  ].includes(section)
 
   const build = (id: string | null): void => {
     setEditing(id)
@@ -297,6 +312,7 @@ export default function App(): React.JSX.Element {
           />
         )}
         {section === 'Computers' && <Computers agents={agents} server={server} />}
+        {section === 'Knowledge' && <Knowledge />}
         {section === 'Integrations' && <Integrations agents={agents} />}
         {section === 'Settings' && (
           <Settings server={server} agents={agents} onRecheck={refresh} />

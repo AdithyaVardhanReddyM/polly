@@ -6,10 +6,10 @@ import { serverUrl } from './api'
  * is GET-only, so this parses the `event:` / `data:` frames by hand.
  * Resolves when the stream ends; rejects on HTTP errors or when aborted.
  */
-export async function stream(
+export async function stream<E = CoderEvent>(
   path: string,
   body: unknown,
-  onEvent: (event: CoderEvent) => void,
+  onEvent: (event: E) => void,
   signal?: AbortSignal
 ): Promise<void> {
   const url = `${await serverUrl()}${path}`
@@ -49,7 +49,7 @@ export async function stream(
         .join('\n')
       if (data) {
         try {
-          onEvent(JSON.parse(data) as CoderEvent)
+          onEvent(JSON.parse(data) as E)
         } catch {
           /* a malformed frame is dropped, not fatal */
         }

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { AgentSummary } from '../../../shared/contracts'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { SendArt } from '../components/StageArt'
+import { Todos } from '../todos/Todos'
 
 const STARTERS = [
   'Fix the failing tests in my repo',
@@ -123,6 +124,8 @@ export function Home({ agents, runnable, onBrowse, onCode, onStart }: Props): Re
           Browse agents
         </button>
       </p>
+
+      <Todos />
     </div>
   )
 }

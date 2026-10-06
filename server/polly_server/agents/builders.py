@@ -7,7 +7,8 @@ graph state (the Deep Agents default backend), or in a ConTree sandbox when
 the agent runs code (`sandbox.py`). The only tools they get are read-only
 (web, GitHub) plus the one that hands in their result, the apps the user
 connected and allowed them (`integrations/`), the shared memory
-(`memory.py`) and `ask_teammate`, when they have teammates (`team.py`).
+(`memory.py`) with the user's to-do list (`todos.py`), and `ask_teammate`,
+when they have teammates (`team.py`).
 
 An agent is built either to lead a session, or as a teammate in another
 agent's session (`as_agent`, see `delegation.py`).
@@ -19,7 +20,7 @@ import datetime as dt
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from polly_server import memory, model_registry, sandbox
+from polly_server import memory, model_registry, sandbox, todos
 from polly_server import tools as tool_registry
 from polly_server.agents import catalog, delegation, runtime, team, voice
 from polly_server.agents.spec import AgentSpec
@@ -134,7 +135,11 @@ def build_agent(
         "checkpointer": checkpointer or get_checkpointer(),
         # Same shape as the Coder's: the run passes one context to every agent.
         "context_schema": CoderContext,
-        "middleware": [memory.middleware(spec.id)] if spec.memory else [],
+        # Memory comes with the user's to-do list: both are what Polly knows
+        # and keeps for the user across conversations.
+        "middleware": [memory.middleware(spec.id), todos.middleware(spec.id)]
+        if spec.memory
+        else [],
     }
     if spec.sandbox and sandbox.available():
         options["backend"] = sandbox.for_session(session.id)

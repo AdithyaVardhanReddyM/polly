@@ -4,6 +4,8 @@
  * `server/polly_server/api/schemas.py` — keep the two in step.
  */
 
+import type { CopilotBridge } from './copilot'
+
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
 export interface AppInfo {
@@ -23,6 +25,8 @@ export interface PollyBridge {
   revealPath: (path: string) => Promise<void>
   /** Keep the window chrome in step with the renderer's theme. */
   setBackgroundColor: (hex: string) => Promise<void>
+  /** The copilot in the notch: the native helper, its windows and the ⌃⌥P switch. */
+  copilot: CopilotBridge
 }
 
 // ---------- agent server ----------
@@ -581,3 +585,242 @@ export type CoderEvent =
       error: string | null
       duration_ms: number
     })
+
+// ---------- to-dos and reminders ----------
+
+/** Where a to-do came from. */
+export interface TodoSource {
+  /** copilot: detected on screen · user: typed in · agent: an agent added it */
+  kind: 'copilot' | 'user' | 'agent'
+  /** The app it was seen in, e.g. "Slack". */
+  app?: string | null
+  bundle_id?: string | null
+  /** The window title it was seen in. */
+  window?: string | null
+  url?: string | null
+  /** The sentence it was detected from. */
+  excerpt?: string | null
+  /** With kind `agent`: who added it. */
+  agent_id?: string | null
+}
+
+export type TodoStatus = 'open' | 'done'
+
+/** One thing the user means to do; with `remind_at` it is also a reminder. */
+export interface TodoItem {
+  id: string
+  title: string
+  notes: string
+  /** Epoch seconds; null when it has no due date. */
+  due_at: number | null
+  /** Epoch seconds; when the notch should remind the user. */
+  remind_at: number | null
+  /** Set once the reminder was shown, so it fires once (snoozing clears it). */
+  reminded_at: number | null
+  status: TodoStatus
+  source: TodoSource
+  created_at: number
+  updated_at: number
+  completed_at: number | null
+}
+
+export interface TodoFields {
+  title: string
+  notes?: string
+  due_at?: number | null
+  remind_at?: number | null
+  source?: TodoSource
+}
+
+export type TodoPatch = Partial<Pick<TodoItem, 'title' | 'notes' | 'due_at' | 'remind_at' | 'status'>>
+
+// ---------- knowledge bases ----------
+
+export interface KnowledgeBase {
+  id: string
+  name: string
+  description: string
+  files: number
+  /** Total tokens across its files, roughly. */
+  tokens: number
+  created_at: number
+  updated_at: number
+}
+
+export type KnowledgeFileStatus = 'processing' | 'ready' | 'error'
+
+export interface KnowledgeFile {
+  id: string
+  kb_id: string
+  name: string
+  size: number
+  mime: string
+  status: KnowledgeFileStatus
+  error: string | null
+  pages: number | null
+  tokens: number
+  created_at: number
+}
+
+export interface KnowledgeDetail {
+  base: KnowledgeBase
+  files: KnowledgeFile[]
+}
+
+/** A passage an answer cites as `[n]`. */
+export interface KnowledgeSource {
+  n: number
+  file_id: string
+  file_name: string
+  page: number | null
+  excerpt: string
+}
+
+export interface KnowledgeHit {
+  chunk_id: string
+  file_id: string
+  file_name: string
+  page: number | null
+  text: string
+  score: number
+}
+
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  text: string
+}
+
+/** Frames of a knowledge-base answer stream. */
+export type KnowledgeEvent =
+  | { type: 'sources'; sources: KnowledgeSource[] }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; text: string }
+  | { type: 'error'; message: string }
+
+// ---------- copilot (the notch) ----------
+
+/** What the copilot proposes for the app in front. */
+export interface CopilotChip {
+  id: string
+  label: string
+  /** Shown with a spark: the action does more than read (drafts, fills, computes). */
+  agentic?: boolean
+}
+
+/** How "Apply" puts a suggestion into the app. */
+export interface ApplyPlan {
+  kind: 'replace_field' | 'replace_selection' | 'insert' | 'cell' | 'fill_fields'
+  text: string
+  /** With `cell`: the cell reference, e.g. "C4". */
+  cell?: string | null
+  /** With `fill_fields`: what goes in each form field (empty text clears it). */
+  fields?: { token: string; label: string; text: string }[] | null
+  /** The focused element or selection the text belongs in (from the snapshot). */
+  token?: string | null
+}
+
+export type HintKind =
+  | 'reply_draft'
+  | 'completion'
+  | 'formula'
+  | 'fix'
+  | 'rewrite'
+  | 'answer'
+  | 'info'
+
+export interface TodoProposal {
+  id: string
+  title: string
+  notes: string
+  due_at: number | null
+  /** Exact phrases on screen it came from; the overlay highlights them. */
+  evidence: string[]
+  source: TodoSource
+}
+
+export interface RecallHit {
+  id: string
+  app: string
+  bundle_id: string | null
+  window: string
+  url: string | null
+  at: number
+  excerpt: string
+  score: number
+}
+
+export interface CopilotContext {
+  /** e.g. "Gmail · URGENT: Meeting with Maria" */
+  label: string
+  /** email · spreadsheet · pdf · chat · document · code · browser · generic */
+  lens: string
+  app: string
+  bundle_id: string
+}
+
+/** Frames of the copilot's streams (`/copilot/observe`, `/act`, `/ask`, `/rewrite`). */
+export type CopilotEvent =
+  | { type: 'context'; context: CopilotContext }
+  | { type: 'chips'; chips: CopilotChip[] }
+  | { type: 'scene'; summary: string }
+  | { type: 'looking'; question: string }
+  | { type: 'status'; text: string }
+  | { type: 'todo'; todo: TodoProposal }
+  | { type: 'card.start'; id: string; kind: HintKind; title: string; proactive: boolean }
+  | { type: 'card.delta'; id: string; text: string }
+  | {
+      type: 'card.done'
+      id: string
+      /** Markdown around the suggestion (an explanation, an answer); may be empty. */
+      text: string
+      /** The text meant for the app (a draft, a formula), shown in its own box; null for plain answers. */
+      suggestion: string | null
+      /** How Apply puts it into the app; null when it can only be copied. */
+      apply: ApplyPlan | null
+    }
+  | { type: 'recall'; hits: RecallHit[] }
+  | { type: 'sources'; sources: KnowledgeSource[] }
+  | { type: 'quiet'; reason: string }
+  | { type: 'error'; message: string }
+  | { type: 'done' }
+
+export interface CopilotExcludedApp {
+  bundle_id: string
+  name: string
+}
+
+export interface CopilotHiddenWindow {
+  bundle_id: string
+  app: string
+  title: string
+}
+
+export interface CopilotSettings {
+  /** What the copilot may offer without being asked. */
+  suggest: { hints: boolean; chips: boolean; todos: boolean; writing: boolean }
+  exclusions: { apps: CopilotExcludedApp[]; domains: string[] }
+  hidden_windows: CopilotHiddenWindow[]
+  /** Hint kinds muted per lens with "Don't show these". */
+  muted: { lens: string; kind: HintKind }[]
+  /** Decides, drafts and answers. */
+  brain_model: string
+  /** Looks at screenshots when text is not enough. */
+  vision_model: string
+  /** Keep a searchable text history of what was on screen. */
+  recall: { enabled: boolean; days: number }
+}
+
+/** One entry in "What Polly saw". */
+export interface CopilotLogEntry {
+  id: string
+  at: number
+  trigger: string
+  app: string
+  window: string
+  url: string | null
+  /** What left the Mac: text sizes and whether a screenshot went to the vision model. */
+  sent: { ax_chars: number; ocr_chars: number; screenshot: boolean }
+  scene: string | null
+  outcome: string
+  ms: number
+}

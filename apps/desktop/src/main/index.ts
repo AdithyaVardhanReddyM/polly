@@ -1,10 +1,27 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { AppInfo, Result } from '../shared/contracts'
+import { Copilot } from './copilot'
 
 const serverUrl = process.env.POLLY_SERVER_URL ?? 'http://127.0.0.1:8787'
 
 let mainWindow: BrowserWindow | null = null
+let copilot: Copilot | null = null
+
+/** Brings the main window forward, on a section ("settings", "knowledge"…) if given. */
+function openMain(section?: string): void {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  const win = mainWindow
+  if (!win) return
+  if (section && /^[\w/-]+$/.test(section)) {
+    const go = (): void => void win.webContents.executeJavaScript(`location.hash = '#${section}'`)
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', go)
+    else go()
+  }
+  if (win.isMinimized()) win.restore()
+  win.show()
+  app.focus({ steal: true })
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -27,6 +44,9 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
 
   // Anything that wants a real browser gets one; nothing navigates the shell away.
   // Only web links: pages from search results must not open local files or apps.
@@ -86,9 +106,26 @@ void app.whenReady().then(() => {
   registerIpc()
   createWindow()
 
+  // The copilot in the notch (macOS only: it needs the notch and the native helper).
+  if (process.platform === 'darwin') {
+    copilot = new Copilot(serverUrl, openMain)
+    copilot.start()
+  }
+
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // The notch and overlay windows always exist; only the main window counts here.
+    if (!mainWindow) createWindow()
+    else mainWindow.show()
   })
+})
+
+app.on('will-quit', (event) => {
+  if (!copilot) return
+  // Let the helper quit first; it would anyway, once our socket closes.
+  event.preventDefault()
+  const stopping = copilot
+  copilot = null
+  void stopping.stop().finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

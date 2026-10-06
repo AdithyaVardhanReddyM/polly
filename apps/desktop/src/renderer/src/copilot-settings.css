@@ -1,0 +1,63 @@
+/* Settings → Copilot */
+
+.copilot-ok {
+  color: var(--ok);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.copilot-model {
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.copilot-model svg:last-child {
+  width: 14px;
+  height: 14px;
+  color: var(--faint);
+}
+
+.copilot-item {
+  gap: 12px;
+}
+
+.copilot-item > img,
+.copilot-icon-blank {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.copilot-apps {
+  max-height: 340px;
+  min-width: 240px;
+  overflow-y: auto;
+}
+
+.copilot-apps .menu-item img {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.copilot-log .row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copilot-scene {
+  margin-top: 2px;
+  color: var(--faint);
+}
+
+.section-head kbd,
+.row-why kbd {
+  font: inherit;
+  font-size: 12px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--code-bg);
+  color: var(--ink);
+}

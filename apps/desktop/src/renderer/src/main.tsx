@@ -9,6 +9,9 @@ import './design.css'
 import './integrations.css'
 import './builder.css'
 import './team.css'
+import './todos.css'
+import './knowledge.css'
+import './copilot-settings.css'
 import { initTheme } from './theme'
 
 initTheme()

@@ -14,6 +14,7 @@ import kimiColor from '@lobehub/icons-static-svg/icons/kimi-color.svg?raw'
 import moonshot from '@lobehub/icons-static-svg/icons/moonshot.svg?raw'
 import nebius from '@lobehub/icons-static-svg/icons/nebius.svg?raw'
 import nvidia from '@lobehub/icons-static-svg/icons/nvidia-color.svg?raw'
+import qwen from '@lobehub/icons-static-svg/icons/qwen-color.svg?raw'
 import zai from '@lobehub/icons-static-svg/icons/zai.svg?raw'
 import { useSyncExternalStore } from 'react'
 
@@ -117,7 +118,8 @@ const VENDOR_LOGOS: Record<string, string> = {
   nvidia,
   'z.ai': zai,
   deepseek,
-  moonshot
+  moonshot,
+  qwen
 }
 
 /** Kimi models wear Kimi's mark rather than Moonshot's. */

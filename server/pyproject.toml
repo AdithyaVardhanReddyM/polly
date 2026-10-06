@@ -21,6 +21,16 @@ dependencies = [
     "composio-langchain>=0.25.0",
     # Nebius ConTree sandboxes: where agents run code.
     "contree-sdk[langchain]>=0.3.6",
+    # Knowledge bases: reading PDFs (and rendering scanned pages), Word and
+    # Excel files and images, and taking uploads.
+    "pypdf>=6.19.0",
+    "pypdfium2>=5.14.0",
+    "python-docx>=1.2.0",
+    "openpyxl>=3.1.5",
+    "pillow>=12.3.0",
+    "python-multipart>=0.0.32",
+    # Vector search in SQLite, next to FTS5 keyword search (`retrieval.py`).
+    "sqlite-vec>=0.1.9",
 ]
 
 [project.scripts]

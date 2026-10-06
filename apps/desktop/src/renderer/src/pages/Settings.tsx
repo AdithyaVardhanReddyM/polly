@@ -4,6 +4,7 @@ import type { AgentSummary, AppInfo, Memory } from '../../../shared/contracts'
 import type { ServerState } from '../App'
 import { api } from '../api'
 import { shortTime } from '../coder/toolMeta'
+import { CopilotSettingsSections } from '../components/CopilotSettings'
 import { PageHead } from '../components/PageHead'
 import { useRoster } from '../store/roster'
 import { type StageArt, useStageArt } from '../components/StageArt'
@@ -65,6 +66,8 @@ export function Settings({ server, agents, onRecheck }: Props): React.JSX.Elemen
         </div>
         <p className="hint">Keys live in the repo-root <code>.env</code>; see <code>.env.example</code>.</p>
       </section>
+
+      <CopilotSettingsSections />
 
       <MemorySection agents={agents} />
 

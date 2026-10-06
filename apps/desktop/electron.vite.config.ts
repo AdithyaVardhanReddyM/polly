@@ -21,7 +21,14 @@ export default defineConfig({
     build: {
       // File-type icons stay separate files: 1,200 of them would bloat the bundle.
       assetsInlineLimit: (file) => (file.includes('material-icon-theme') ? false : undefined),
-      rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html') } }
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          // The copilot's island in the notch, and the overlay it draws on other apps with.
+          notch: resolve(__dirname, 'src/renderer/notch.html'),
+          overlay: resolve(__dirname, 'src/renderer/overlay.html')
+        }
+      }
     }
   }
 })

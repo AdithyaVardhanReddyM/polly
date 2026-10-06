@@ -12,14 +12,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from polly_server import __version__, persistence, sandbox
 from polly_server.api.routers import (
     agents,
+    copilot,
     design,
     groups,
     integrations,
+    knowledge,
     memory,
     models,
     projects,
     reviews,
     sessions,
+    todos,
 )
 from polly_server.api.schemas import Health, ModelInfo, Provider
 from polly_server.config import settings
@@ -55,6 +58,9 @@ app.include_router(sessions.router)
 app.include_router(design.router)
 app.include_router(integrations.router)
 app.include_router(reviews.router)
+app.include_router(todos.router)
+app.include_router(knowledge.router)
+app.include_router(copilot.router)
 
 
 @app.get("/health", response_model=Health)

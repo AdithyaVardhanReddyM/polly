@@ -1,6 +1,7 @@
 import {
   Bot,
   House,
+  Library,
   PanelLeftClose,
   PanelLeftOpen,
   Plug,
@@ -33,16 +34,18 @@ export const SECTIONS = [
   'Agents',
   'Builder',
   'Computers',
+  'Knowledge',
   'Integrations'
 ] as const
 export type Section = (typeof SECTIONS)[number] | 'Settings'
 
 /** The pages in the sidebar's nav; every agent below it opens its own workspace. */
-const NAV = ['Home', 'Agents', 'Integrations'] as const
+const NAV = ['Home', 'Agents', 'Knowledge', 'Integrations'] as const
 
 const ICONS: Record<(typeof NAV)[number] | 'Settings', React.JSX.Element> = {
   Home: <House />,
   Agents: <Bot />,
+  Knowledge: <Library />,
   Integrations: <Plug />,
   Settings: <Cog />
 }

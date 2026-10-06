@@ -12,6 +12,10 @@ import type {
   Group,
   GroupFields,
   IntegrationsStatus,
+  KnowledgeBase,
+  KnowledgeDetail,
+  KnowledgeFile,
+  KnowledgeHit,
   Memory,
   ModelList,
   Project,
@@ -22,6 +26,9 @@ import type {
   Rule,
   ServerHealth,
   Session,
+  TodoFields,
+  TodoItem,
+  TodoPatch,
   Transcript,
   TreeNode
 } from '../../shared/contracts'
@@ -37,7 +44,7 @@ export function serverUrl(): Promise<string> {
   return base
 }
 
-async function request<T>(
+export async function request<T>(
   method: string,
   path: string,
   body?: unknown,
@@ -76,6 +83,28 @@ const postSlow = <T>(path: string, body?: unknown): Promise<Result<T>> =>
   request<T>('POST', path, body, 60_000)
 const patch = <T>(path: string, body: unknown): Promise<Result<T>> => request<T>('PATCH', path, body)
 const del = (path: string): Promise<Result<void>> => request<void>('DELETE', path)
+
+/** POST a multipart form. No content-type header: the browser writes it, with the boundary. */
+async function multipart<T>(path: string, form: FormData, timeout = 120_000): Promise<Result<T>> {
+  const url = `${await serverUrl()}${path}`
+  try {
+    const res = await fetch(url, { method: 'POST', body: form, signal: AbortSignal.timeout(timeout) })
+    if (!res.ok) {
+      let detail = `${path} returned HTTP ${res.status}`
+      try {
+        const payload = (await res.json()) as { detail?: unknown }
+        if (typeof payload.detail === 'string') detail = payload.detail
+      } catch {
+        /* no JSON body */
+      }
+      return { ok: false, error: detail }
+    }
+    return { ok: true, data: (await res.json()) as T }
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    return { ok: false, error: `agent server unreachable (${reason})` }
+  }
+}
 
 const q = (params: Record<string, string | number | undefined>): string => {
   const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== '')
@@ -273,6 +302,57 @@ export const api = {
       request<AgentSummary>('PUT', `/agents/${encodeURIComponent(agentId)}/integrations`, {
         integrations
       })
+  },
+
+  /** To-dos and reminders: typed in, spotted on screen by the copilot, or added by agents. */
+  todos: {
+    list: async (status: 'open' | 'done' | 'all' = 'open'): Promise<Result<TodoItem[]>> => {
+      const res = await get<{ todos: TodoItem[] }>(`/todos${q({ status })}`)
+      return res.ok ? { ok: true, data: res.data.todos } : res
+    },
+    create: (body: TodoFields) => post<TodoItem>('/todos', body),
+    update: (id: string, body: TodoPatch) => patch<TodoItem>(`/todos/${encodeURIComponent(id)}`, body),
+    remove: (id: string) => del(`/todos/${encodeURIComponent(id)}`),
+    /** Open to-dos whose reminder is due and has not been shown yet. */
+    due: async (): Promise<Result<TodoItem[]>> => {
+      const res = await get<{ todos: TodoItem[] }>('/todos/due')
+      return res.ok ? { ok: true, data: res.data.todos } : res
+    },
+    /** The reminder was shown; it fires once. */
+    reminded: (id: string) => post<TodoItem>(`/todos/${encodeURIComponent(id)}/reminded`),
+    snooze: (id: string, minutes: number) =>
+      post<TodoItem>(`/todos/${encodeURIComponent(id)}/snooze`, { minutes })
+  },
+
+  /** Files Polly answers from. Chat streams through `stream()` (see `sse.ts`). */
+  knowledge: {
+    list: async (): Promise<Result<KnowledgeBase[]>> => {
+      const res = await get<{ bases: KnowledgeBase[] }>('/knowledge')
+      return res.ok ? { ok: true, data: res.data.bases } : res
+    },
+    create: (body: { name: string; description?: string }) => post<KnowledgeBase>('/knowledge', body),
+    get: (id: string) => get<KnowledgeDetail>(`/knowledge/${encodeURIComponent(id)}`),
+    update: (id: string, body: { name?: string; description?: string }) =>
+      patch<KnowledgeBase>(`/knowledge/${encodeURIComponent(id)}`, body),
+    remove: (id: string) => del(`/knowledge/${encodeURIComponent(id)}`),
+    upload: async (id: string, files: File[]): Promise<Result<KnowledgeFile[]>> => {
+      const form = new FormData()
+      for (const file of files) form.append('files', file, file.name)
+      const res = await multipart<{ files: KnowledgeFile[] }>(
+        `/knowledge/${encodeURIComponent(id)}/files`,
+        form
+      )
+      return res.ok ? { ok: true, data: res.data.files } : res
+    },
+    removeFile: (id: string, fileId: string) =>
+      del(`/knowledge/${encodeURIComponent(id)}/files/${encodeURIComponent(fileId)}`),
+    search: async (id: string, query: string, k?: number): Promise<Result<KnowledgeHit[]>> => {
+      const res = await post<{ hits: KnowledgeHit[] }>(`/knowledge/${encodeURIComponent(id)}/search`, {
+        query,
+        k
+      })
+      return res.ok ? { ok: true, data: res.data.hits } : res
+    }
   }
 }
 

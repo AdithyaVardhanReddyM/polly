@@ -44,3 +44,7 @@ __pycache__/
 # Agent skills installed locally
 .agents/
 skills-lock.json
+
+# the native helper, built from apps/desktop/native/PollySense
+apps/desktop/native/build/
+apps/desktop/native/PollySense/.build/

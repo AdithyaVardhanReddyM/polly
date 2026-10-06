@@ -165,6 +165,19 @@ MODELS: tuple[ModelSpec, ...] = (
         output_price=3.50,
     ),
     ModelSpec(
+        "Qwen/Qwen3.8-27B",
+        "Qwen 3.8 27B",
+        "Qwen",
+        262_144,
+        # Thinks by default; off, it describes a screenshot in about two
+        # seconds, the fastest of the vision models (measured 2026-10-06).
+        efforts={"none": _THINKING_OFF, "high": {}},
+        default_effort="none",
+        input_price=0.45,
+        output_price=3.00,
+        vision=True,
+    ),
+    ModelSpec(
         "moonshotai/Kimi-K2.7-Code",
         "Kimi K2.7 Code",
         "Moonshot",
