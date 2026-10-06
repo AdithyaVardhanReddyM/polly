@@ -213,13 +213,14 @@ class ModelOption(BaseModel):
     # Reasoning-effort levels the user can pick, lowest first; empty when the
     # model has no such setting.
     efforts: list[Effort] = Field(default_factory=list)
+    # The level a conversation runs at until one is picked; null with no levels.
+    default_effort: Effort | None = None
 
 
 class ModelList(BaseModel):
     models: list[ModelOption]
     default: str
     default_fast: str
-    default_effort: Effort
 
 
 # ---------- projects ----------

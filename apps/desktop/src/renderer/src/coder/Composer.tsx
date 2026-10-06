@@ -150,21 +150,19 @@ function useCurrent(): { mode: PermissionMode; model: string; effort: Effort | n
   }
 }
 
-/** What a conversation starts on when the model has a choice; the server agrees. */
-export const DEFAULT_EFFORT: Effort = 'high'
-
 const EFFORT_INFO: Record<Effort, { label: string; blurb: string }> = {
-  low: { label: 'Low', blurb: 'Thinks briefly and gets going. Fastest.' },
+  none: { label: 'Off', blurb: 'Answers without thinking first. Fastest.' },
+  low: { label: 'Low', blurb: 'Thinks briefly, then gets going.' },
   medium: { label: 'Medium', blurb: 'Thinks a while before acting.' },
-  high: { label: 'High', blurb: 'Thinks longest. Best for hard problems.' }
+  high: { label: 'High', blurb: 'Thinks things through before acting.' },
+  max: { label: 'Max', blurb: 'Thinks as long as it needs. Slowest; for the hardest problems.' }
 }
 
-/** The level a conversation runs at: its own if the model has it, else high, else the highest it has. */
-export function effortFor(efforts: Effort[], wanted: Effort | null | undefined): Effort | null {
-  if (efforts.length === 0) return null
-  if (wanted && efforts.includes(wanted)) return wanted
-  if (efforts.includes(DEFAULT_EFFORT)) return DEFAULT_EFFORT
-  return efforts[efforts.length - 1]
+/** The level a conversation runs at: its own if the model has it, else the model's default. */
+export function effortFor(model: ModelOption | undefined, wanted: Effort | null | undefined): Effort | null {
+  if (!model || model.efforts.length === 0) return null
+  if (wanted && model.efforts.includes(wanted)) return wanted
+  return model.default_effort
 }
 
 function ModeSwitcher(): React.JSX.Element {
@@ -306,7 +304,10 @@ export function ModelChip({
   onClick: () => void
 }): React.JSX.Element {
   const current = describeModel(model, models)
-  const level = effortFor(models.find((m) => m.id === model)?.efforts ?? [], effort)
+  const level = effortFor(
+    models.find((m) => m.id === model),
+    effort
+  )
   return (
     <button
       className="chip model-chip"
@@ -342,8 +343,9 @@ export function ModelMenu({
   const vendors = [...new Set(models.map((m) => m.vendor))]
   const fastest = Math.max(0, ...models.map((m) => m.tokens_per_second ?? 0))
   const shown = models.find((m) => m.id === peek) ?? models.find((m) => m.id === value)
-  const efforts = models.find((m) => m.id === value)?.efforts ?? []
-  const level = onEffort ? effortFor(efforts, effort) : null
+  const chosen = models.find((m) => m.id === value)
+  const efforts = chosen?.efforts ?? []
+  const level = onEffort ? effortFor(chosen, effort) : null
 
   return (
     <div className="model-picker">
@@ -353,9 +355,7 @@ export function ModelMenu({
         </div>
         {level && onEffort && (
           <div className="menu-effort">
-            <span className="menu-effort-label" title={EFFORT_INFO[level].blurb}>
-              Reasoning effort
-            </span>
+            <span className="menu-effort-label">Reasoning effort</span>
             <div className="segmented" role="radiogroup" aria-label="Reasoning effort">
               {efforts.map((e) => (
                 <button
@@ -370,6 +370,7 @@ export function ModelMenu({
                 </button>
               ))}
             </div>
+            <span className="menu-effort-blurb">{EFFORT_INFO[level].blurb}</span>
           </div>
         )}
         {vendors.map((v) => (

@@ -112,10 +112,12 @@ def chat_model(
     }
     extra = dict(spec.extra_body)
     # How long a thinking model deliberates before it answers: the session's
-    # choice, high by default, sent the way this model understands it.
+    # choice, else the model's default, sent the way this model understands it.
     level = model_registry.effort_for(spec, reasoning_effort)
-    if level and spec.efforts[level]:
-        extra["reasoning_effort"] = spec.efforts[level]
+    for key, value in (spec.efforts[level] if level else {}).items():
+        if isinstance(value, dict) and isinstance(extra.get(key), dict):
+            value = {**extra[key], **value}
+        extra[key] = value
     if extra:
         options["extra_body"] = extra
     options.update(kwargs)

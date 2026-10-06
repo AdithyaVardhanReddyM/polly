@@ -61,7 +61,7 @@ class Session(BaseModel):
     members: list[str] | None = None
     title: str = ""
     model: str
-    # How hard a thinking model thinks; null runs at the default (high).
+    # How hard a thinking model thinks; null runs at the model's default.
     reasoning_effort: Effort | None = None
     mode: Mode = "supervised"
     created_at: float

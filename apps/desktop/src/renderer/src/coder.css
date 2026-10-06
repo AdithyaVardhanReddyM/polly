@@ -1030,12 +1030,12 @@ kbd {
   border-bottom: 1px solid var(--line);
 }
 
-/* the chosen model's reasoning effort, under the menu's header */
+/* the chosen model's reasoning effort, under the menu's header: every level
+   it has, side by side, with what the current one does */
 .menu-effort {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   padding: 4px 6px 10px 10px;
   margin-bottom: 4px;
   border-bottom: 1px solid var(--line);
@@ -1047,8 +1047,18 @@ kbd {
   color: var(--ink);
 }
 
+.menu-effort .segmented {
+  display: flex;
+}
+
 .menu-effort .segmented button {
-  padding: 3px 10px;
+  flex: 1;
+  padding: 3px 6px;
+}
+
+.menu-effort-blurb {
+  font-size: 11.5px;
+  color: var(--faint);
 }
 
 /* "GLM 5.3 · High" in the model chip */

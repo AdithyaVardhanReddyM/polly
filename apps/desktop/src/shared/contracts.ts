@@ -145,17 +145,18 @@ export interface ModelOption {
   is_default_fast: boolean
   /** The reasoning-effort levels the user can pick, lowest first; empty when the model has none. */
   efforts: Effort[]
+  /** The level a conversation runs at until one is picked; null when it has no levels. */
+  default_effort: Effort | null
 }
 
 export interface ModelList {
   models: ModelOption[]
   default: string
   default_fast: string
-  default_effort: Effort
 }
 
-/** How hard a thinking model thinks before it acts. */
-export type Effort = 'low' | 'medium' | 'high'
+/** How hard a thinking model thinks before it acts; 'none' turns thinking off. */
+export type Effort = 'none' | 'low' | 'medium' | 'high' | 'max'
 
 // ---------- coder: projects and sessions ----------
 
@@ -227,7 +228,7 @@ export interface Session {
   members: string[] | null
   title: string
   model: string
-  /** null runs at the default effort (high). */
+  /** null runs at the model's default effort. */
   reasoning_effort: Effort | null
   mode: PermissionMode
   created_at: number

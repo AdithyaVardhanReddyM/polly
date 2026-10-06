@@ -26,10 +26,10 @@ def list_models() -> ModelList:
                 is_default=m.id == settings.model,
                 is_default_fast=m.id == settings.fast_model,
                 efforts=[e for e in model_registry.EFFORTS if e in m.efforts],
+                default_effort=m.default_effort if m.efforts else None,
             )
             for m in model_registry.MODELS
         ],
         default=settings.model,
         default_fast=settings.fast_model,
-        default_effort=model_registry.DEFAULT_EFFORT,
     )

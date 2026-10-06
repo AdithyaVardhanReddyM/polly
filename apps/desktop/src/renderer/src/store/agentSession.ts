@@ -38,7 +38,7 @@ export interface AgentSessionState {
   members: string[] | null
   /** The model picked for the conversation about to start; null is the agent's default. */
   model: string | null
-  /** The reasoning effort picked for it; null is the default (high). */
+  /** The reasoning effort picked for it; null is the model's default. */
   effort: Effort | null
 
   sources: Source[]
