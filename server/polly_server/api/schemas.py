@@ -14,6 +14,7 @@ from polly_server.agents.spec import AgentSpec, Division, Runtime, Status
 from polly_server.coder.context import Mode
 from polly_server.coder.permissions import Rule
 from polly_server.integrations import assignments
+from polly_server.model_registry import Effort
 from polly_server.projects import Project
 from polly_server.sessions import Session
 
@@ -209,12 +210,16 @@ class ModelOption(BaseModel):
     output_price: float | None
     is_default: bool
     is_default_fast: bool
+    # Reasoning-effort levels the user can pick, lowest first; empty when the
+    # model has no such setting.
+    efforts: list[Effort] = Field(default_factory=list)
 
 
 class ModelList(BaseModel):
     models: list[ModelOption]
     default: str
     default_fast: str
+    default_effort: Effort
 
 
 # ---------- projects ----------
@@ -257,12 +262,14 @@ class SessionCreate(BaseModel):
     # The teammates for this conversation; null follows the agent's own team.
     members: list[str] | None = None
     model: str | None = None
+    reasoning_effort: Effort | None = None
     mode: Mode | None = None
     title: str = ""
 
 
 class SessionPatch(BaseModel):
     model: str | None = None
+    reasoning_effort: Effort | None = None
     mode: Mode | None = None
     title: str | None = None
     members: list[str] | None = None

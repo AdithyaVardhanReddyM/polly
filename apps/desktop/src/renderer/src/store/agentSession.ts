@@ -2,6 +2,7 @@ import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import type {
   ChangeReport,
   CoderEvent,
+  Effort,
   PRFacts,
   Scorecard,
   Session,
@@ -35,6 +36,10 @@ export interface AgentSessionState {
    * start; null follows the agent's own team.
    */
   members: string[] | null
+  /** The model picked for the conversation about to start; null is the agent's default. */
+  model: string | null
+  /** The reasoning effort picked for it; null is the default (high). */
+  effort: Effort | null
 
   sources: Source[]
   report: ChangeReport | null
@@ -53,6 +58,10 @@ export interface AgentSessionState {
   send: (text: string, mentions?: string[]) => Promise<void>
   /** Choose the conversation's teammates. */
   setMembers: (ids: string[]) => Promise<void>
+  /** Choose the model: the open conversation's, and the next new one's. */
+  setModel: (model: string) => Promise<void>
+  /** Choose how hard the model thinks: the open conversation's, and the next new one's. */
+  setEffort: (effort: Effort) => Promise<void>
   cancel: () => Promise<void>
   review: (prUrl: string) => Promise<boolean>
   clearError: () => void
@@ -174,6 +183,8 @@ export function createAgentStore({
       error: null,
       starting: false,
       members: null,
+      model: null,
+      effort: null,
       sources: [],
       report: null,
       scorecard: null,
@@ -294,10 +305,18 @@ export function createAgentStore({
         if (!sid) {
           const firstLine = trimmed.split('\n')[0]
           const title = firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine
+          const model = get().model ?? undefined
+          const reasoning_effort = get().effort ?? undefined
           const created = await api.sessions.create(
             scope === 'group'
-              ? { group_id: get().agentId, title }
-              : { agent_id: get().agentId, title, members: get().members ?? undefined }
+              ? { group_id: get().agentId, title, model, reasoning_effort }
+              : {
+                  agent_id: get().agentId,
+                  title,
+                  members: get().members ?? undefined,
+                  model,
+                  reasoning_effort
+                }
           )
           if (!created.ok) {
             set({ error: created.error })
@@ -306,11 +325,39 @@ export function createAgentStore({
           sid = created.data.id
           set({ sessionId: sid, session: created.data })
           setHash(sid)
+        } else if (!get().session?.title && get().items.length === 0) {
+          // Started without words (a design drawn by hand): the first message names it.
+          const firstLine = trimmed.split('\n')[0]
+          const title = firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine
+          const id = sid
+          void api.sessions.update(id, { title }).then((res) => {
+            if (res.ok && get().sessionId === id) set({ session: res.data })
+          })
         }
         set({ items: [...get().items, { kind: 'user', id: `local-${Date.now()}`, text: trimmed }] })
         if (beforeSend) await beforeSend(sid)
         const { path, body } = streams.message(sid, trimmed, mentions)
         await drive(path, body, sid)
+      },
+
+      async setModel(model) {
+        const sid = get().sessionId
+        set({ model })
+        if (!sid) return
+        const res = await api.sessions.update(sid, { model })
+        if (get().sessionId !== sid) return
+        if (res.ok) set({ session: res.data })
+        else set({ error: res.error })
+      },
+
+      async setEffort(effort) {
+        const sid = get().sessionId
+        set({ effort })
+        if (!sid) return
+        const res = await api.sessions.update(sid, { reasoning_effort: effort })
+        if (get().sessionId !== sid) return
+        if (res.ok) set({ session: res.data })
+        else set({ error: res.error })
       },
 
       async cancel() {

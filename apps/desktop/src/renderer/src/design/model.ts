@@ -36,7 +36,16 @@ export interface Rect {
   height: number
 }
 
-export type Tool = 'select' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'text'
+export type Tool = 'select' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text'
+
+/**
+ * The layers drawn outside any frame live in one artboard with this id. It sits
+ * at the canvas origin with no size and never clips, so its children are placed
+ * in canvas coordinates, like top-level layers in Figma. It is never selected
+ * or labelled as a frame itself.
+ */
+export const CANVAS_ID = 'canvas'
+export const isLoose = (boardId: string): boolean => boardId === CANVAS_ID
 
 export const sameRef = (a: NodeRef | null, b: NodeRef | null): boolean =>
   !!a && !!b && a.boardId === b.boardId && a.nodeId === b.nodeId

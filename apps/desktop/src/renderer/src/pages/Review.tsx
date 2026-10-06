@@ -123,7 +123,11 @@ export function Review({
                 ) : null
               }
             />
-            <AgentComposer store={useReview} placeholder="Ask about this review…" />
+            <AgentComposer
+              store={useReview}
+              placeholder="Ask about this review…"
+              defaultModel={agent?.model ?? ''}
+            />
           </>
         )}
       </section>

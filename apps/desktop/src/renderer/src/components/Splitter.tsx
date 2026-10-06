@@ -34,6 +34,31 @@ export function usePaneWidth(
   return [width, save, reset]
 }
 
+/** A pane's share of the row it sits in (0–1), surviving reloads, so it keeps its proportion as the window changes. */
+export function usePaneShare(
+  key: string,
+  fallback: number
+): [number, (share: number) => void, () => void] {
+  const [share, setShare] = useState(() => {
+    const stored = recall(key, fallback)
+    return stored > 0 && stored < 1 ? stored : fallback
+  })
+  const save = useCallback(
+    (next: number) => {
+      const value = Math.round(next * 1000) / 1000
+      setShare(value)
+      try {
+        localStorage.setItem(key, String(value))
+      } catch {
+        /* storage can be unavailable */
+      }
+    },
+    [key]
+  )
+  const reset = useCallback(() => save(fallback), [save, fallback])
+  return [share, save, reset]
+}
+
 /**
  * A draggable divider on the edge of a side pane. `side` is where the pane
  * sits relative to the divider: dragging toward the chat widens the pane.

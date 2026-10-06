@@ -21,14 +21,14 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 
 from polly_server import artifacts, sessions
 from polly_server.agents import builders
 from polly_server.coder import permissions
 from polly_server.coder.agent import build_coder, tracker_for
-from polly_server.coder.events import translate
+from polly_server.coder.events import text_of, translate
 from polly_server.config import settings
 from polly_server.model_registry import get as model_spec
 from polly_server.projects import Project
@@ -38,6 +38,15 @@ from polly_server.sessions import Session
 log = logging.getLogger(__name__)
 
 KEEP_RUNS = 50  # finished runs kept in memory for late subscribers
+# A reply the output limit cut off before it did anything gets one nudge to act.
+CUT_OFF_RETRIES = 1
+NUDGE = (
+    "Your last reply hit the output limit while you were still thinking, so nothing "
+    "happened and the user saw nothing. Keep your thinking to a few lines. Tell the "
+    "user in one sentence what you will do, then make your first tool call now. Put "
+    "long content (HTML, code, documents) in tool calls, never in your thinking, and "
+    "write it in parts if it is large."
+)
 
 
 class SessionBusy(Exception):
@@ -46,6 +55,10 @@ class SessionBusy(Exception):
 
 class NothingToResearch(Exception):
     pass
+
+
+class OutputLimitReached(Exception):
+    """The model kept spending its output budget on thinking and never acted."""
 
 
 def build_graph(project: Project | None, session: Session) -> Any:
@@ -234,36 +247,75 @@ class RunManager:
                 }
             )
             agent = build_graph(project, session)
-            stream = agent.astream(
-                payload,
-                config={"configurable": {"thread_id": session.id}},
-                context=context,
-                stream_mode=["messages", "updates", "custom"],
-                subgraphs=True,
-            )
+            config = {"configurable": {"thread_id": session.id}}
             # A resumed run replays the model message that paused it; its
             # tokens were already counted when it first streamed.
             replayed = isinstance(payload, Command)
-            async for event in translate(stream, main_agent=session.agent_id):
-                if event["type"] == "usage":
-                    if replayed:
-                        replayed = False
-                        event["replayed"] = True
-                    else:
-                        usage = usage.add(event)
-                    # A teammate's usage (`delegation.py`) counts towards the
-                    # session but says nothing about the lead's context.
-                    context_tokens = int(event.get("context_tokens") or context_tokens)
-                    event["context_tokens"] = context_tokens
-                    event["session_total"] = usage.model_dump()
-                    event["context_window"] = _context_window(session.model)
-                if event["type"] == "approval.required":
-                    interrupted = True
-                await run.push(event)
+            retries = 0
+            while True:
+                stream = agent.astream(
+                    payload,
+                    config=config,
+                    context=context,
+                    stream_mode=["messages", "updates", "custom"],
+                    subgraphs=True,
+                )
+                async for event in translate(stream, main_agent=session.agent_id):
+                    if event["type"] == "usage":
+                        if replayed:
+                            replayed = False
+                            event["replayed"] = True
+                        else:
+                            usage = usage.add(event)
+                        # A teammate's usage (`delegation.py`) counts towards the
+                        # session but says nothing about the lead's context.
+                        context_tokens = int(event.get("context_tokens") or context_tokens)
+                        event["context_tokens"] = context_tokens
+                        event["session_total"] = usage.model_dump()
+                        event["context_window"] = _context_window(session.model)
+                    if event["type"] == "approval.required":
+                        interrupted = True
+                    await run.push(event)
+                if interrupted:
+                    break
+                cut = await _cut_off(agent, config)
+                if cut is None:
+                    break
+                if cut == "silent" and retries < CUT_OFF_RETRIES:
+                    retries += 1
+                    await run.push(
+                        {
+                            "type": "notice",
+                            "tone": "info",
+                            "text": "The model ran out of room while thinking; "
+                            "asking it to act now.",
+                        }
+                    )
+                    nudge = HumanMessage(content=NUDGE, additional_kwargs={"polly_hidden": True})
+                    payload = {"messages": [nudge]}
+                    continue
+                limit = _max_output(session.model)
+                if cut == "silent":
+                    raise OutputLimitReached(
+                        f"The model used its whole output budget ({limit:,} tokens) thinking and "
+                        "stopped before doing anything. Try again, or pick another model."
+                    )
+                await run.push(
+                    {
+                        "type": "notice",
+                        "tone": "warn",
+                        "text": "The reply was cut off at the model's output limit "
+                        f"({limit:,} tokens).",
+                    }
+                )
+                break
             if interrupted:
                 status = "awaiting_approval"
         except asyncio.CancelledError:
             status = "cancelled"
+        except OutputLimitReached as exc:
+            status = "error"
+            error = str(exc)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user as an event
             log.exception("run %s failed", run.id)
             status = "error"
@@ -326,6 +378,27 @@ class RunManager:
                 "title": child.title,
             }
         )
+
+
+async def _cut_off(agent: Any, config: dict[str, Any]) -> str | None:
+    """Whether the run's last reply was stopped by the output limit: "silent"
+    when it said and did nothing (all thinking), "truncated" when it said
+    something; None when it ended on its own."""
+    state = await agent.aget_state(config)
+    messages = list((state.values or {}).get("messages") or [])
+    last = messages[-1] if messages else None
+    if not isinstance(last, AIMessage) or last.tool_calls:
+        return None
+    if (last.response_metadata or {}).get("finish_reason") != "length":
+        return None
+    return "truncated" if text_of(last).strip() else "silent"
+
+
+def _max_output(model_id: str) -> int:
+    try:
+        return model_spec(model_id).max_output_tokens
+    except LookupError:
+        return 0
 
 
 def _context_window(model_id: str) -> int | None:

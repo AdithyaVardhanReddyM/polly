@@ -1,6 +1,6 @@
 import { ArrowUp, Check, ChevronDown, Hand, Map as MapIcon, ShieldCheck, Square, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { ModelOption, PermissionMode } from '../../../shared/contracts'
+import type { Effort, ModelOption, PermissionMode } from '../../../shared/contracts'
 import { SendArt } from '../components/StageArt'
 import { useCoder } from '../store/coder'
 import { describeModel } from '../store/models'
@@ -140,13 +140,31 @@ export function Composer({
   )
 }
 
-function useCurrent(): { mode: PermissionMode; model: string } {
+function useCurrent(): { mode: PermissionMode; model: string; effort: Effort | null } {
   const session = useCoder((s) => s.session)
   const project = useCoder((s) => s.projects.find((p) => p.id === s.projectId))
   return {
     mode: session?.mode ?? project?.settings.default_mode ?? 'supervised',
-    model: session?.model ?? project?.settings.default_model ?? ''
+    model: session?.model ?? project?.settings.default_model ?? '',
+    effort: session?.reasoning_effort ?? null
   }
+}
+
+/** What a conversation starts on when the model has a choice; the server agrees. */
+export const DEFAULT_EFFORT: Effort = 'high'
+
+const EFFORT_INFO: Record<Effort, { label: string; blurb: string }> = {
+  low: { label: 'Low', blurb: 'Thinks briefly and gets going. Fastest.' },
+  medium: { label: 'Medium', blurb: 'Thinks a while before acting.' },
+  high: { label: 'High', blurb: 'Thinks longest. Best for hard problems.' }
+}
+
+/** The level a conversation runs at: its own if the model has it, else high, else the highest it has. */
+export function effortFor(efforts: Effort[], wanted: Effort | null | undefined): Effort | null {
+  if (efforts.length === 0) return null
+  if (wanted && efforts.includes(wanted)) return wanted
+  if (efforts.includes(DEFAULT_EFFORT)) return DEFAULT_EFFORT
+  return efforts[efforts.length - 1]
 }
 
 function ModeSwitcher(): React.JSX.Element {
@@ -238,28 +256,25 @@ function ModeSwitcher(): React.JSX.Element {
 }
 
 function ModelPicker(): React.JSX.Element {
-  const { model } = useCurrent()
+  const { model, effort } = useCurrent()
   const models = useCoder((s) => s.models)
   const setModel = useCoder((s) => s.setModel)
+  const setEffort = useCoder((s) => s.setEffort)
   const run = useCoder((s) => s.run)
   const [open, setOpen] = useState(false)
-  const current = describeModel(model, models)
 
   return (
     <Popover
       open={open}
       onOpenChange={setOpen}
       trigger={
-        <button
-          className="chip model-chip"
+        <ModelChip
+          model={model}
+          models={models}
+          effort={effort}
           disabled={run !== 'idle'}
-          title={model}
           onClick={() => setOpen(!open)}
-        >
-          <ModelLogo vendor={current.vendor} model={model} size={15} />
-          <span>{model ? current.label : 'Model'}</span>
-          <ChevronDown className="chip-chev" />
-        </button>
+        />
       }
     >
       <ModelMenu
@@ -269,8 +284,41 @@ function ModelPicker(): React.JSX.Element {
           setOpen(false)
           void setModel(id)
         }}
+        effort={effort}
+        onEffort={(e) => void setEffort(e)}
       />
     </Popover>
+  )
+}
+
+/** The model in a message box, with its reasoning effort when it has one: "GLM 5.3 · High". */
+export function ModelChip({
+  model,
+  models,
+  effort,
+  disabled,
+  onClick
+}: {
+  model: string
+  models: ModelOption[]
+  effort: Effort | null
+  disabled: boolean
+  onClick: () => void
+}): React.JSX.Element {
+  const current = describeModel(model, models)
+  const level = effortFor(models.find((m) => m.id === model)?.efforts ?? [], effort)
+  return (
+    <button
+      className="chip model-chip"
+      disabled={disabled}
+      title={level ? `${model} · reasoning effort ${EFFORT_INFO[level].label.toLowerCase()}` : model}
+      onClick={onClick}
+    >
+      <ModelLogo vendor={current.vendor} model={model} size={15} />
+      <span>{model ? current.label : 'Model'}</span>
+      {level && <span className="chip-effort">{EFFORT_INFO[level].label}</span>}
+      <ChevronDown className="chip-chev" />
+    </button>
   )
 }
 
@@ -279,16 +327,23 @@ function ModelPicker(): React.JSX.Element {
 export function ModelMenu({
   models,
   value,
-  onPick
+  onPick,
+  effort,
+  onEffort
 }: {
   models: ModelOption[]
   value: string
   onPick: (id: string) => void
+  /** With `onEffort`, the menu also sets how hard the chosen model thinks. */
+  effort?: Effort | null
+  onEffort?: (effort: Effort) => void
 }): React.JSX.Element {
   const [peek, setPeek] = useState<string | null>(null)
   const vendors = [...new Set(models.map((m) => m.vendor))]
   const fastest = Math.max(0, ...models.map((m) => m.tokens_per_second ?? 0))
   const shown = models.find((m) => m.id === peek) ?? models.find((m) => m.id === value)
+  const efforts = models.find((m) => m.id === value)?.efforts ?? []
+  const level = onEffort ? effortFor(efforts, effort) : null
 
   return (
     <div className="model-picker">
@@ -296,6 +351,27 @@ export function ModelMenu({
         <div className="menu-head">
           <NebiusLogo /> Served by Nebius Token Factory
         </div>
+        {level && onEffort && (
+          <div className="menu-effort">
+            <span className="menu-effort-label" title={EFFORT_INFO[level].blurb}>
+              Reasoning effort
+            </span>
+            <div className="segmented" role="radiogroup" aria-label="Reasoning effort">
+              {efforts.map((e) => (
+                <button
+                  key={e}
+                  role="radio"
+                  aria-checked={e === level}
+                  className={e === level ? 'is-active' : ''}
+                  title={EFFORT_INFO[e].blurb}
+                  onClick={() => onEffort(e)}
+                >
+                  {EFFORT_INFO[e].label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {vendors.map((v) => (
           <div key={v} className="menu-group">
             <div className="menu-label">{v}</div>

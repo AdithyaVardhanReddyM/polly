@@ -12,7 +12,7 @@ export type CodeFormat = 'tailwind' | 'html' | 'jsx'
 export type ImageFormat = 'png' | 'svg'
 
 const VOID = new Set(['img', 'br', 'hr', 'input', 'meta', 'link', 'source', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse', 'stop', 'use'])
-const DROP_ATTRS = new Set(['data-id', 'data-name'])
+const DROP_ATTRS = new Set(['data-id', 'data-name', 'data-lucide', 'data-stroke-width'])
 const JSX_ATTRS: Record<string, string> = {
   class: 'className',
   for: 'htmlFor',

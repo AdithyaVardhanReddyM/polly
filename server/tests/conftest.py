@@ -36,6 +36,7 @@ class FakeModel(GenericFakeChatModel):
                 content=message.content,
                 id=message.id,
                 additional_kwargs=dict(message.additional_kwargs),
+                response_metadata=dict(message.response_metadata),
                 tool_call_chunks=[
                     {
                         "name": c["name"],

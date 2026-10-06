@@ -5,6 +5,7 @@ import type {
   AgentSummary,
   Artifacts,
   Decision,
+  Effort,
   FileChange,
   FileContent,
   FileDiff,
@@ -174,6 +175,7 @@ export const api = {
       group_id?: string
       members?: string[]
       model?: string
+      reasoning_effort?: Effort
       mode?: string
       title?: string
     }) => post<Session>('/sessions', body),
@@ -190,7 +192,13 @@ export const api = {
     get: (id: string) => get<Session>(`/sessions/${id}`),
     update: (
       id: string,
-      body: { model?: string; mode?: string; title?: string; members?: string[] }
+      body: {
+        model?: string
+        reasoning_effort?: Effort
+        mode?: string
+        title?: string
+        members?: string[]
+      }
     ) => patch<Session>(`/sessions/${id}`, body),
     remove: (id: string) => del(`/sessions/${id}`),
     transcript: (id: string) => get<Transcript>(`/sessions/${id}/messages`),

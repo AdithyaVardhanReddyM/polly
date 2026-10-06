@@ -43,7 +43,7 @@ import {
 } from './color'
 import { capture, download, exportCode, fileName, type CodeFormat } from './exporters'
 import { ColorField, IconToggle, Num, Row, Section, Segmented, Select } from './fields'
-import { isAbsolute, isContainer, rotationOf } from './frame'
+import { boxOf, isAbsolute, isContainer, rotationOf } from './frame'
 import { FONTS, PRESETS, type Artboard, type NodeRef } from './model'
 import { getFrame, useCanvas } from './store'
 
@@ -68,17 +68,26 @@ function pickImage(): Promise<File | null> {
   })
 }
 
-export function Inspector(): React.JSX.Element {
+/** Whether the edit panel has anything to show: a selection, or frame sizes to pick. */
+export function useInspecting(): boolean {
+  const selection = useCanvas((s) => s.selection)
+  const tool = useCanvas((s) => s.tool)
+  return tool === 'frame' || selection.length > 0
+}
+
+export function Inspector(): React.JSX.Element | null {
   const selection = useCanvas((s) => s.selection)
   const doc = useCanvas((s) => s.doc)
+  const tool = useCanvas((s) => s.tool)
   useCanvas((s) => s.version)
   const frame = getFrame()
 
+  if (tool === 'frame') return <FramePresets />
   const first = selection[0]
-  if (!frame || !first) return <EmptyInspector />
+  if (!frame || !first) return null
 
   const board = doc.artboards.find((b) => b.id === first.boardId)
-  if (!board) return <EmptyInspector />
+  if (!board) return null
   if (first.nodeId === null) return <BoardInspector board={board} />
 
   const nodes = selection
@@ -86,7 +95,7 @@ export function Inspector(): React.JSX.Element {
     .map((r) => frame.node(r))
     .filter((n): n is HTMLElement => !!n)
   const el = nodes[0]
-  if (!el) return <EmptyInspector />
+  if (!el) return null
 
   return <NodeInspector key={first.nodeId} el={el} nodes={nodes} refTo={first} board={board} />
 }
@@ -116,7 +125,10 @@ function NodeInspector({
       set({ [prop]: `${v}${unit}` }, commit)
 
   const absolute = isAbsolute(el)
+  // A layer on the open canvas has no frame to line up with on its own.
+  const looseTop = parent.classList.contains('pl-root') && !!parent.parentElement?.classList.contains('is-loose')
   const allAbsolute = nodes.every(isAbsolute)
+  const alignable = allAbsolute && (nodes.length > 1 || !looseTop)
   const tag = el.localName
   const isImage = tag === 'img'
   const isSvg = tag === 'svg'
@@ -130,34 +142,37 @@ function NodeInspector({
   const align = (kind: 'l' | 'h' | 'r' | 't' | 'v' | 'b'): void => {
     const items = nodes.filter(isAbsolute)
     if (items.length === 0) return
-    const host = (items[0].offsetParent as HTMLElement | null) ?? parent
+    const boxes = items.map(boxOf)
+    // One layer aligns to its frame (or group); several align to each other.
+    if (items.length === 1 && looseTop) return
     const area =
       items.length === 1
-        ? { l: 0, t: 0, r: host.clientWidth, b: host.clientHeight }
+        ? { l: 0, t: 0, r: parent.clientWidth, b: parent.clientHeight }
         : {
-            l: Math.min(...items.map((n) => n.offsetLeft)),
-            t: Math.min(...items.map((n) => n.offsetTop)),
-            r: Math.max(...items.map((n) => n.offsetLeft + n.offsetWidth)),
-            b: Math.max(...items.map((n) => n.offsetTop + n.offsetHeight))
+            l: Math.min(...boxes.map((b) => b.left)),
+            t: Math.min(...boxes.map((b) => b.top)),
+            r: Math.max(...boxes.map((b) => b.left + b.width)),
+            b: Math.max(...boxes.map((b) => b.top + b.height))
           }
-    for (const n of items) {
+    items.forEach((n, i) => {
+      const { width: w, height: h } = boxes[i]
       if (kind === 'l') n.style.left = `${area.l}px`
-      if (kind === 'h') n.style.left = `${Math.round((area.l + area.r - n.offsetWidth) / 2)}px`
-      if (kind === 'r') n.style.left = `${area.r - n.offsetWidth}px`
+      if (kind === 'h') n.style.left = `${Math.round((area.l + area.r - w) / 2)}px`
+      if (kind === 'r') n.style.left = `${area.r - w}px`
       if (kind === 't') n.style.top = `${area.t}px`
-      if (kind === 'v') n.style.top = `${Math.round((area.t + area.b - n.offsetHeight) / 2)}px`
-      if (kind === 'b') n.style.top = `${area.b - n.offsetHeight}px`
+      if (kind === 'v') n.style.top = `${Math.round((area.t + area.b - h) / 2)}px`
+      if (kind === 'b') n.style.top = `${area.b - h}px`
       if ('lhr'.includes(kind)) n.style.right = 'auto'
       else n.style.bottom = 'auto'
-    }
+    })
     store.commit()
   }
 
   const distribute = (axis: 'x' | 'y'): void => {
     const items = nodes.filter(isAbsolute)
     if (items.length < 3) return
-    const start = (n: HTMLElement): number => (axis === 'x' ? n.offsetLeft : n.offsetTop)
-    const size = (n: HTMLElement): number => (axis === 'x' ? n.offsetWidth : n.offsetHeight)
+    const start = (n: HTMLElement): number => (axis === 'x' ? boxOf(n).left : boxOf(n).top)
+    const size = (n: HTMLElement): number => (axis === 'x' ? boxOf(n).width : boxOf(n).height)
     const sorted = [...items].sort((a, b) => start(a) - start(b))
     const last = sorted[sorted.length - 1]
     const free = start(last) + size(last) - start(sorted[0]) - sorted.reduce((sum, n) => sum + size(n), 0)
@@ -177,9 +192,10 @@ function NodeInspector({
     for (const n of nodes) {
       if (mode === 'absolute' && !isAbsolute(n)) {
         const host = n.parentElement as HTMLElement
-        const left = n.offsetLeft - (n.offsetParent === host ? 0 : host.offsetLeft)
-        const top = n.offsetTop - (n.offsetParent === host ? 0 : host.offsetTop)
-        const { offsetWidth: w, offsetHeight: h } = n
+        const box = boxOf(n)
+        const left = box.left - (n.offsetParent === host || !('offsetWidth' in n) ? 0 : host.offsetLeft)
+        const top = box.top - (n.offsetParent === host || !('offsetWidth' in n) ? 0 : host.offsetTop)
+        const { width: w, height: h } = box
         if (view.getComputedStyle(host).position === 'static') host.style.position = 'relative'
         Object.assign(n.style, {
           position: 'absolute',
@@ -201,7 +217,7 @@ function NodeInspector({
     return v === '100%' ? 'fill' : v === 'fit-content' || v === 'auto' ? 'hug' : 'fixed'
   }
   const setSizing = (axis: 'width' | 'height', mode: 'fixed' | 'fill' | 'hug'): void => {
-    const now = axis === 'width' ? el.offsetWidth : el.offsetHeight
+    const now = axis === 'width' ? boxOf(el).width : boxOf(el).height
     set({ [axis]: mode === 'fill' ? '100%' : mode === 'hug' ? 'fit-content' : `${now}px` })
   }
   const SIZING = [
@@ -241,7 +257,7 @@ function NodeInspector({
 
   const upload = async (): Promise<string | null> => {
     const file = await pickImage()
-    const sessionId = useCanvas.getState().sessionId
+    const sessionId = file ? await useCanvas.getState().ensureSession() : null
     if (!file || !sessionId) return null
     const res = await api.design.upload(sessionId, file, file.name)
     return res.ok ? res.data.url : null
@@ -299,30 +315,31 @@ function NodeInspector({
   const families = Array.from(new Set([...fonts, ...FONTS])).map((f) => ({ value: f, label: f }))
   const textAlign = cs.textAlign === 'start' ? 'left' : cs.textAlign === 'end' ? 'right' : cs.textAlign
 
+  const kind = nodes.length > 1 ? 'Selection' : kindOf(el)
   return (
     <div className="dz-inspector">
       <div className="dz-insp-head">
         <b>{nodes.length > 1 ? `${nodes.length} layers` : (el.getAttribute('data-name') ?? labelOf(el))}</b>
-        <span>{nodes.length > 1 ? '' : tag}</span>
+        <span>{kind}</span>
       </div>
 
       <div className="dz-align">
-        <IconToggle title="Align left" disabled={!allAbsolute} onClick={() => align('l')}>
+        <IconToggle title="Align left" disabled={!alignable} onClick={() => align('l')}>
           <AlignStartVertical />
         </IconToggle>
-        <IconToggle title="Align horizontal centres" disabled={!allAbsolute} onClick={() => align('h')}>
+        <IconToggle title="Align horizontal centres" disabled={!alignable} onClick={() => align('h')}>
           <AlignCenterVertical />
         </IconToggle>
-        <IconToggle title="Align right" disabled={!allAbsolute} onClick={() => align('r')}>
+        <IconToggle title="Align right" disabled={!alignable} onClick={() => align('r')}>
           <AlignEndVertical />
         </IconToggle>
-        <IconToggle title="Align top" disabled={!allAbsolute} onClick={() => align('t')}>
+        <IconToggle title="Align top" disabled={!alignable} onClick={() => align('t')}>
           <AlignStartHorizontal />
         </IconToggle>
-        <IconToggle title="Align vertical centres" disabled={!allAbsolute} onClick={() => align('v')}>
+        <IconToggle title="Align vertical centres" disabled={!alignable} onClick={() => align('v')}>
           <AlignCenterHorizontal />
         </IconToggle>
-        <IconToggle title="Align bottom" disabled={!allAbsolute} onClick={() => align('b')}>
+        <IconToggle title="Align bottom" disabled={!alignable} onClick={() => align('b')}>
           <AlignEndHorizontal />
         </IconToggle>
         <IconToggle
@@ -353,20 +370,20 @@ function NodeInspector({
         <Row>
           <Num
             label="X"
-            value={absolute ? (cs.left === 'auto' ? el.offsetLeft : px(cs.left)) : null}
+            value={absolute ? (cs.left === 'auto' ? boxOf(el).left : px(cs.left)) : null}
             disabled={!absolute}
             onChange={(v, c) => set({ left: `${v}px`, right: 'auto' }, c)}
           />
           <Num
             label="Y"
-            value={absolute ? (cs.top === 'auto' ? el.offsetTop : px(cs.top)) : null}
+            value={absolute ? (cs.top === 'auto' ? boxOf(el).top : px(cs.top)) : null}
             disabled={!absolute}
             onChange={(v, c) => set({ top: `${v}px`, bottom: 'auto' }, c)}
           />
         </Row>
         <Row>
-          <Num label="W" value={el.offsetWidth ?? px(cs.width)} min={0} onChange={one('width')} />
-          <Num label="H" value={el.offsetHeight ?? px(cs.height)} min={0} onChange={one('height')} />
+          <Num label="W" value={boxOf(el).width} min={0} onChange={one('width')} />
+          <Num label="H" value={boxOf(el).height} min={0} onChange={one('height')} />
         </Row>
         {!isSvg && (
           <Row>
@@ -637,8 +654,19 @@ function NodeInspector({
       )}
 
       {isSvg && (
-        <Section title="Icon colour">
+        <Section title="Stroke">
           <ColorField value={cs.color} onChange={(v, c) => set({ color: v }, c)} />
+          <Row>
+            <Num
+              label="Weight"
+              title="Stroke weight"
+              value={px(cs.strokeWidth) || px(el.getAttribute('stroke-width') ?? '') || 0}
+              min={0}
+              step={0.25}
+              onChange={(v, c) => set({ 'stroke-width': `${v}px` }, c)}
+            />
+            <span className="dz-row-gap" />
+          </Row>
         </Section>
       )}
 
@@ -773,6 +801,17 @@ function NodeInspector({
       <ExportSection board={board} nodeId={refTo.nodeId} />
     </div>
   )
+}
+
+/** What kind of layer it is, in a word, for the panel's header. */
+function kindOf(el: Element): string {
+  const name = el.getAttribute('data-name')
+  if (name === 'Line' || name === 'Arrow') return 'Line'
+  if (el.localName === 'img') return 'Image'
+  if (el.localName === 'svg') return 'Vector'
+  if (el.children.length === 0 && el.textContent?.trim()) return 'Text'
+  if (el.children.length === 0) return 'Shape'
+  return 'Group'
 }
 
 function labelOf(el: Element): string {
@@ -944,56 +983,35 @@ function ExportSection({ board, nodeId }: { board: Artboard; nodeId: string | nu
   )
 }
 
-function EmptyInspector(): React.JSX.Element {
-  const addBoard = useCanvas((s) => s.addBoard)
-  const fit = useCanvas((s) => s.fit)
+/** While the Frame tool is on: the standard sizes, a click away. */
+function FramePresets(): React.JSX.Element {
+  const groups = Array.from(new Set(PRESETS.map((p) => p.group)))
+  const add = (p: (typeof PRESETS)[number]): void => {
+    const store = useCanvas.getState()
+    const board = store.addBoard({ name: p.name, width: p.width, height: p.height })
+    store.setTool('select')
+    store.fit(board.id)
+  }
   return (
     <div className="dz-inspector">
       <div className="dz-insp-head">
-        <b>Design</b>
-        <span>Nothing selected</span>
+        <b>Frame</b>
+        <span>Drag on the canvas, or pick a size</span>
       </div>
-      <Section title="Add a frame">
-        <div className="dz-presets">
-          {PRESETS.map((p) => (
-            <button
-              key={p.name}
-              onClick={() => {
-                addBoard({ name: p.name, width: p.width, height: p.height })
-                fit()
-              }}
-            >
-              <span>{p.name}</span>
-              <em>
-                {p.width}×{p.height}
-              </em>
-            </button>
-          ))}
-        </div>
-      </Section>
-      <Section title="Shortcuts">
-        <dl className="dz-keys">
-          {[
-            ['V', 'Select'],
-            ['F', 'Frame'],
-            ['R / O', 'Rectangle / ellipse'],
-            ['T', 'Text'],
-            ['Space', 'Pan'],
-            ['⌘ scroll', 'Zoom'],
-            ['Esc', 'Select parent'],
-            ['Enter', 'Edit text'],
-            ['⌘D', 'Duplicate'],
-            ['⌘G', 'Group'],
-            ['[ ]', 'Send back / bring forward'],
-            ['⌘1', 'Zoom to fit']
-          ].map(([k, v]) => (
-            <div key={k}>
-              <dt>{k}</dt>
-              <dd>{v}</dd>
-            </div>
-          ))}
-        </dl>
-      </Section>
+      {groups.map((group) => (
+        <Section key={group} title={group}>
+          <div className="dz-presets">
+            {PRESETS.filter((p) => p.group === group).map((p) => (
+              <button key={p.name} onClick={() => add(p)}>
+                <span>{p.name}</span>
+                <em>
+                  {p.width} × {p.height}
+                </em>
+              </button>
+            ))}
+          </div>
+        </Section>
+      ))}
     </div>
   )
 }

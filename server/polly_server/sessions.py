@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 from polly_server.coder.context import Mode
 from polly_server.config import settings
+from polly_server.model_registry import Effort
 
 SessionStatus = Literal["idle", "running", "awaiting_approval", "error"]
 
@@ -60,6 +61,8 @@ class Session(BaseModel):
     members: list[str] | None = None
     title: str = ""
     model: str
+    # How hard a thinking model thinks; null runs at the default (high).
+    reasoning_effort: Effort | None = None
     mode: Mode = "supervised"
     created_at: float
     updated_at: float
@@ -92,6 +95,7 @@ def create(
     parent_session_id: str | None = None,
     group_id: str | None = None,
     members: list[str] | None = None,
+    reasoning_effort: Effort | None = None,
 ) -> Session:
     now = time.time()
     session = Session(
@@ -103,6 +107,7 @@ def create(
         members=members,
         title=title,
         model=model,
+        reasoning_effort=reasoning_effort,
         mode=mode,
         created_at=now,
         updated_at=now,

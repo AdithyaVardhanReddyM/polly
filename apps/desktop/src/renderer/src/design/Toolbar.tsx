@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   Circle,
   Frame,
   Hand,
@@ -7,6 +8,7 @@ import {
   MousePointer2,
   Plus,
   Redo2,
+  Slash,
   Square,
   Type,
   Undo2
@@ -15,13 +17,19 @@ import { useRef } from 'react'
 import type { Tool } from './model'
 import { useCanvas } from './store'
 
-const TOOLS: { id: Tool; label: string; key: string; icon: React.JSX.Element }[] = [
-  { id: 'select', label: 'Select', key: 'V', icon: <MousePointer2 /> },
-  { id: 'hand', label: 'Pan', key: 'H', icon: <Hand /> },
-  { id: 'frame', label: 'Frame', key: 'F', icon: <Frame /> },
-  { id: 'rect', label: 'Rectangle', key: 'R', icon: <Square /> },
-  { id: 'ellipse', label: 'Ellipse', key: 'O', icon: <Circle /> },
-  { id: 'text', label: 'Text', key: 'T', icon: <Type /> }
+const TOOLS: { id: Tool; label: string; key: string; icon: React.JSX.Element }[][] = [
+  [
+    { id: 'select', label: 'Move', key: 'V', icon: <MousePointer2 /> },
+    { id: 'hand', label: 'Hand', key: 'H', icon: <Hand /> }
+  ],
+  [
+    { id: 'frame', label: 'Frame', key: 'F', icon: <Frame /> },
+    { id: 'rect', label: 'Rectangle', key: 'R', icon: <Square /> },
+    { id: 'ellipse', label: 'Ellipse', key: 'O', icon: <Circle /> },
+    { id: 'line', label: 'Line', key: 'L', icon: <Slash /> },
+    { id: 'arrow', label: 'Arrow', key: '⇧L', icon: <ArrowUpRight /> },
+    { id: 'text', label: 'Text', key: 'T', icon: <Type /> }
+  ]
 ]
 
 /** The floating bar under the canvas: tools, undo, zoom. */
@@ -34,20 +42,27 @@ export function Toolbar(): React.JSX.Element {
   const file = useRef<HTMLInputElement>(null)
 
   return (
-    <div className="dz-toolbar">
-      {TOOLS.map((t) => (
-        <button
-          key={t.id}
-          className={tool === t.id ? 'is-active' : ''}
-          title={`${t.label} (${t.key})`}
-          onClick={() => setTool(t.id)}
-        >
-          {t.icon}
-        </button>
+    <div className="dz-toolbar" role="toolbar" aria-label="Canvas tools">
+      {TOOLS.map((group, i) => (
+        <div className="dz-tool-group" key={i}>
+          {group.map((t) => (
+            <button
+              key={t.id}
+              className={tool === t.id ? 'is-active' : ''}
+              aria-pressed={tool === t.id}
+              title={`${t.label} (${t.key})`}
+              onClick={() => setTool(t.id)}
+            >
+              {t.icon}
+            </button>
+          ))}
+          {i === TOOLS.length - 1 && (
+            <button title="Image" onClick={() => file.current?.click()}>
+              <ImagePlus />
+            </button>
+          )}
+        </div>
       ))}
-      <button title="Add an image" onClick={() => file.current?.click()}>
-        <ImagePlus />
-      </button>
       <input
         ref={file}
         type="file"
@@ -61,23 +76,25 @@ export function Toolbar(): React.JSX.Element {
           e.target.value = ''
         }}
       />
-      <i />
-      <button title="Undo (⌘Z)" disabled={!canUndo} onClick={() => useCanvas.getState().undo()}>
-        <Undo2 />
-      </button>
-      <button title="Redo (⇧⌘Z)" disabled={!canRedo} onClick={() => useCanvas.getState().redo()}>
-        <Redo2 />
-      </button>
-      <i />
-      <button title="Zoom out (⌘−)" onClick={() => useCanvas.getState().zoomTo(zoom / 1.25)}>
-        <Minus />
-      </button>
-      <button className="dz-zoom" title="Zoom to fit (⌘1)" onClick={() => useCanvas.getState().fit()}>
-        {Math.round(zoom * 100)}%
-      </button>
-      <button title="Zoom in (⌘+)" onClick={() => useCanvas.getState().zoomTo(zoom * 1.25)}>
-        <Plus />
-      </button>
+      <div className="dz-tool-group">
+        <button title="Undo (⌘Z)" disabled={!canUndo} onClick={() => useCanvas.getState().undo()}>
+          <Undo2 />
+        </button>
+        <button title="Redo (⇧⌘Z)" disabled={!canRedo} onClick={() => useCanvas.getState().redo()}>
+          <Redo2 />
+        </button>
+      </div>
+      <div className="dz-tool-group">
+        <button title="Zoom out (⌘−)" onClick={() => useCanvas.getState().zoomTo(zoom / 1.25)}>
+          <Minus />
+        </button>
+        <button className="dz-zoom" title="Zoom to fit (⌘1)" onClick={() => useCanvas.getState().fit()}>
+          {Math.round(zoom * 100)}%
+        </button>
+        <button title="Zoom in (⌘+)" onClick={() => useCanvas.getState().zoomTo(zoom * 1.25)}>
+          <Plus />
+        </button>
+      </div>
     </div>
   )
 }

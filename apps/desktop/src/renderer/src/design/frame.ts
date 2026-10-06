@@ -1,6 +1,7 @@
 import tailwindUrl from '@tailwindcss/browser?url'
+import { expandIcons } from './icons'
 import type { Artboard, NodeRef, Rect, View } from './model'
-import { newId } from './model'
+import { isLoose, newId } from './model'
 
 /**
  * The document the designs live in: one same-origin iframe holding every
@@ -20,6 +21,8 @@ body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 
 .pl-board { position: absolute;
   box-shadow: 0 0 0 1px rgba(20, 20, 30, 0.08), 0 12px 32px rgba(20, 20, 30, 0.08); }
 .pl-root { position: relative; width: 100%; height: 100%; overflow: hidden; color: #111; }
+.pl-board.is-loose { box-shadow: none; }
+.pl-board.is-loose > .pl-root { overflow: visible; }
 .pl-root img { -webkit-user-drag: none; }
 .pl-root [contenteditable] { outline: none; cursor: text; user-select: text; -webkit-user-select: text; }
 .pl-root [data-pl-ghost] { opacity: 0.35; }
@@ -39,6 +42,8 @@ export class CanvasFrame {
   private mounted = new Map<string, string>()
   private fontLinks = new Map<string, HTMLLinkElement>()
   ready: Promise<void>
+  /** Called when the frame changes its own DOM (icons arriving), so the overlay redraws. */
+  onChange: (() => void) | null = null
 
   constructor(readonly iframe: HTMLIFrameElement) {
     const doc = iframe.contentDocument
@@ -63,12 +68,24 @@ export class CanvasFrame {
     })
   }
 
-  setBackground(color: string): void {
-    this.doc.body.style.background = color
+  /** The canvas colour, with a grid of dots in `dot` that pans and zooms with the view. */
+  setBackground(color: string, dot: string): void {
+    const body = this.doc.body.style
+    body.backgroundColor = color
+    body.backgroundImage = dot
+      ? `radial-gradient(circle at center, ${dot} 0, ${dot} 1px, transparent 1.25px)`
+      : 'none'
   }
 
   setView(view: View): void {
     this.world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`
+    // Dots every 24 canvas pixels, thinned or doubled so they stay 14–48px apart on screen.
+    let step = 24 * view.zoom
+    while (step < 14) step *= 2
+    while (step > 48) step /= 2
+    const body = this.doc.body.style
+    body.backgroundSize = `${step}px ${step}px`
+    body.backgroundPosition = `${view.x - step / 2}px ${view.y - step / 2}px`
   }
 
   // ---------- artboards ----------
@@ -95,7 +112,7 @@ export class CanvasFrame {
       let el = this.board(b.id)
       if (!el) {
         el = this.doc.createElement('div')
-        el.className = 'pl-board'
+        el.className = isLoose(b.id) ? 'pl-board is-loose' : 'pl-board'
         el.dataset.board = b.id
         const root = this.doc.createElement('div')
         root.className = 'pl-root'
@@ -113,6 +130,7 @@ export class CanvasFrame {
         root.innerHTML = b.html
         this.ensureIds(root)
         this.mounted.set(b.id, b.html)
+        void expandIcons(root).then((changed) => changed && this.onChange?.())
       }
     })
   }
@@ -242,12 +260,45 @@ function isInlineOnly(el: Element): boolean {
   return Array.from(el.children).every((c) => TEXT_INLINE.has(c.tagName) && isInlineOnly(c))
 }
 
+/** A rectangle or ellipse drawn with the tools: a shape, never a box to put things in. */
+export function isShape(el: Element): boolean {
+  const name = el.getAttribute('data-name')
+  return (name === 'Rectangle' || name === 'Ellipse') && el.children.length === 0
+}
+
 /** Can other nodes be dropped into it? */
 export function isContainer(el: Element): boolean {
-  if (NO_CHILDREN.has(el.tagName)) return false
+  if (NO_CHILDREN.has(el.tagName) || isShape(el)) return false
   if (el.closest('svg')) return false
   if (el.classList.contains('pl-root')) return true
   return !(isTextLeaf(el) && !!el.textContent?.trim())
+}
+
+/**
+ * An element's own box in its parent's pixels, before any rotation. HTML
+ * elements have `offset*`; SVG ones (icons, lines, arrows) do not, so theirs
+ * comes from the computed style, or from where they sit in their parent.
+ */
+export function boxOf(el: Element): { left: number; top: number; width: number; height: number } {
+  if ('offsetWidth' in el) {
+    const h = el as HTMLElement
+    return { left: h.offsetLeft, top: h.offsetTop, width: h.offsetWidth, height: h.offsetHeight }
+  }
+  const cs = el.ownerDocument.defaultView?.getComputedStyle(el)
+  const width = parseFloat(cs?.width ?? '') || 0
+  const height = parseFloat(cs?.height ?? '') || 0
+  if (cs && isAbsolute(el) && cs.left !== 'auto' && cs.top !== 'auto')
+    return { left: parseFloat(cs.left) || 0, top: parseFloat(cs.top) || 0, width, height }
+  const parent = el.parentElement
+  const r = el.getBoundingClientRect()
+  const pr = parent?.getBoundingClientRect()
+  const scale = parent && parent.offsetWidth ? (pr?.width ?? 0) / parent.offsetWidth || 1 : 1
+  return {
+    left: (r.left + r.width / 2 - (pr?.left ?? 0)) / scale - width / 2,
+    top: (r.top + r.height / 2 - (pr?.top ?? 0)) / scale - height / 2,
+    width,
+    height
+  }
 }
 
 export function isAbsolute(el: Element): boolean {

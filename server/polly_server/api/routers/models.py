@@ -25,9 +25,11 @@ def list_models() -> ModelList:
                 output_price=m.output_price,
                 is_default=m.id == settings.model,
                 is_default_fast=m.id == settings.fast_model,
+                efforts=[e for e in model_registry.EFFORTS if e in m.efforts],
             )
             for m in model_registry.MODELS
         ],
         default=settings.model,
         default_fast=settings.fast_model,
+        default_effort=model_registry.DEFAULT_EFFORT,
     )

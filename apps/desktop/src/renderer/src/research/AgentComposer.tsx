@@ -1,9 +1,11 @@
 import { ArrowUp, AtSign, Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { AgentSummary } from '../../../shared/contracts'
+import { ModelChip, ModelMenu, Popover } from '../coder/Composer'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { SendArt } from '../components/StageArt'
 import type { AgentStore } from '../store/agentSession'
+import { useModels } from '../store/models'
 
 /** The `@…` being typed just before the caret: where it starts and what follows it. */
 function mentionAt(text: string, caret: number): { start: number; query: string } | null {
@@ -46,6 +48,7 @@ export function AgentComposer({
   placeholder,
   disabled = false,
   mentionable = [],
+  defaultModel,
   children
 }: {
   store: AgentStore
@@ -53,6 +56,11 @@ export function AgentComposer({
   disabled?: boolean
   /** Agents the user can address with `@Name`. */
   mentionable?: AgentSummary[]
+  /**
+   * The agent's own model. Given, the box offers the model and, for models
+   * that think, the reasoning effort.
+   */
+  defaultModel?: string
   children?: React.ReactNode
 }): React.JSX.Element {
   const run = store((s) => s.run)
@@ -197,6 +205,11 @@ export function AgentComposer({
               <AtSign />
             </button>
           )}
+          {defaultModel !== undefined && (
+            <>
+              <AgentModelPicker store={store} fallback={defaultModel} />
+            </>
+          )}
           {children}
           <span className="composer-spacer" />
           {run === 'running' ? (
@@ -217,5 +230,61 @@ export function AgentComposer({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * The model chip for a project-less agent's message box: the open
+ * conversation's model and reasoning effort, or the ones the next
+ * conversation will start on.
+ */
+export function AgentModelPicker({
+  store,
+  fallback
+}: {
+  store: AgentStore
+  /** The agent's own default, shown until something else is picked. */
+  fallback: string
+}): React.JSX.Element {
+  const session = store((s) => s.session)
+  const picked = store((s) => s.model)
+  const pickedEffort = store((s) => s.effort)
+  const run = store((s) => s.run)
+  const setModel = store((s) => s.setModel)
+  const setEffort = store((s) => s.setEffort)
+  const models = useModels((s) => s.models)
+  const load = useModels((s) => s.load)
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const model = session?.model || picked || fallback
+  const effort = session?.reasoning_effort ?? pickedEffort
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      trigger={
+        <ModelChip
+          model={model}
+          models={models}
+          effort={effort}
+          disabled={run !== 'idle'}
+          onClick={() => setOpen(!open)}
+        />
+      }
+    >
+      <ModelMenu
+        models={models}
+        value={model}
+        onPick={(id) => {
+          setOpen(false)
+          void setModel(id)
+        }}
+        effort={effort}
+        onEffort={(e) => void setEffort(e)}
+      />
+    </Popover>
   )
 }

@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   ChevronRight,
   Circle,
   Component,
@@ -7,7 +8,9 @@ import {
   Frame,
   Image,
   LayoutGrid,
+  PanelLeftClose,
   Shapes,
+  Slash,
   Square,
   Type
 } from 'lucide-react'
@@ -15,14 +18,14 @@ import { useEffect, useRef, useState } from 'react'
 import { COMPONENT_MIME } from './Canvas'
 import { PALETTE } from './components'
 import { isContainer, isTextLeaf } from './frame'
-import { refKey, type NodeRef } from './model'
+import { isLoose, refKey, type NodeRef } from './model'
 import { getFrame, useCanvas } from './store'
 
 /** The left panel: the layer tree of every frame, and the component palette. */
-export function LeftPanel(): React.JSX.Element {
+export function LeftPanel({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [tab, setTab] = useState<'layers' | 'components'>('layers')
   return (
-    <aside className="dz-left">
+    <>
       <div className="dz-tabs">
         <button className={tab === 'layers' ? 'is-active' : ''} onClick={() => setTab('layers')}>
           Layers
@@ -30,13 +33,21 @@ export function LeftPanel(): React.JSX.Element {
         <button className={tab === 'components' ? 'is-active' : ''} onClick={() => setTab('components')}>
           Components
         </button>
+        <span className="dz-tabs-spacer" />
+        <button className="dz-mini" title="Hide layers" onClick={onClose}>
+          <PanelLeftClose />
+        </button>
       </div>
       {tab === 'layers' ? <Layers /> : <Palette />}
-    </aside>
+    </>
   )
 }
 
 function iconFor(el: Element): React.JSX.Element {
+  const name = el.getAttribute('data-name')
+  if (name === 'Arrow') return <ArrowUpRight />
+  if (name === 'Line') return <Slash />
+  if (name === 'Ellipse') return <Circle />
   if (el.localName === 'img') return <Image />
   if (el.localName === 'svg') return <Shapes />
   if (isTextLeaf(el)) return <Type />
@@ -49,6 +60,8 @@ function iconFor(el: Element): React.JSX.Element {
 function nameFor(el: Element): string {
   const given = el.getAttribute('data-name')
   if (given) return given
+  const icon = el.getAttribute('data-lucide')
+  if (icon) return icon.charAt(0).toUpperCase() + icon.slice(1).replace(/-/g, ' ')
   if (isTextLeaf(el)) {
     const text = el.textContent?.trim().replace(/\s+/g, ' ') ?? ''
     if (text) return text.length > 28 ? `${text.slice(0, 28)}…` : text
@@ -213,6 +226,12 @@ function Layers(): React.JSX.Element {
   }
 
   for (const board of doc.artboards) {
+    // Layers drawn on the open canvas are top-level rows of their own.
+    if (isLoose(board.id)) {
+      const root = frame?.root(board.id)
+      if (root) walk(root, board.id, 0)
+      continue
+    }
     const ref = { boardId: board.id, nodeId: null }
     const key = refKey(ref)
     const isOpen = !closed.has(key)
@@ -250,7 +269,7 @@ function Layers(): React.JSX.Element {
   return (
     <div className="dz-layers" ref={list}>
       {rows.length === 0 ? (
-        <p className="dz-note">No frames yet. Ask the Designer for something, or press F and drag on the canvas.</p>
+        <p className="dz-note">Nothing on the canvas yet. Ask the Designer, or pick a tool and draw.</p>
       ) : (
         rows
       )}
@@ -263,8 +282,10 @@ function Palette(): React.JSX.Element {
   const insert = (html: string): void => {
     const store = useCanvas.getState()
     const frame = getFrame()
-    const picked = store.selection[0]
-    const target = picked ?? (store.doc.artboards[0] && { boardId: store.doc.artboards[0].id, nodeId: null })
+    // Components are laid out by a frame; loose layers on the open canvas have none.
+    const picked = store.selection.find((r) => !isLoose(r.boardId))
+    const first = store.doc.artboards.find((b) => !isLoose(b.id))
+    const target = picked ?? (first && { boardId: first.id, nodeId: null })
     if (!frame) return
     if (!target) {
       const board = store.addBoard({ width: 480, height: 320 })

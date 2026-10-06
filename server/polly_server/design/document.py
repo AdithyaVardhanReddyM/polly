@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 import threading
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, Literal
 
 from bs4 import BeautifulSoup, Comment
@@ -24,6 +26,10 @@ from pydantic import BaseModel, Field
 from polly_server.sessions import session_dir
 
 GAP = 120  # canvas pixels between artboards placed automatically
+# The layers the user draws outside any frame live in one artboard with this id:
+# it sits at the canvas origin with no size and never clips, so its children are
+# placed in canvas coordinates.
+CANVAS_ID = "canvas"
 MAX_OUTLINE_NODES = 400
 
 # Never kept: the canvas is a drawing, not a running page.
@@ -96,6 +102,15 @@ def save(session_id: str, doc: DesignDoc) -> DesignDoc:
         draft.write_text(doc.model_dump_json())
         draft.replace(path)
     return doc
+
+
+@contextmanager
+def editing(session_id: str) -> Iterator[DesignDoc]:
+    """The document, held until the change made to it is saved. The agent's
+    tool calls run side by side; without this, two of them would each load,
+    change and save, and the later save would drop the earlier change."""
+    with _lock:
+        yield load(session_id)
 
 
 def save_from_app(session_id: str, doc: DesignDoc) -> DesignDoc:
@@ -335,6 +350,8 @@ def outline(board: Artboard, node_id: str | None = None, limit: int = MAX_OUTLIN
             parts.append(f'"{text}"')
         if tag.name == "img":
             parts.append(f"src={str(tag.get('src', ''))[:60]}")
+        if tag.get("data-lucide"):
+            parts.append(f"icon={tag['data-lucide']}")
         lines.append(" ".join(parts))
         if tag.name in _ATOMIC_TAGS:
             return
@@ -355,10 +372,11 @@ def outline(board: Artboard, node_id: str | None = None, limit: int = MAX_OUTLIN
 
 def place_next(doc: DesignDoc, width: float) -> tuple[float, float]:
     """Where a new artboard goes: to the right of the others, on their top line."""
-    if not doc.artboards:
+    frames = [b for b in doc.artboards if b.id != CANVAS_ID]
+    if not frames:
         return 0.0, 0.0
-    right = max(b.x + b.width for b in doc.artboards)
-    top = min(b.y for b in doc.artboards)
+    right = max(b.x + b.width for b in frames)
+    top = min(b.y for b in frames)
     return right + GAP, top
 
 
@@ -369,6 +387,9 @@ def summary(doc: DesignDoc) -> str:
     lines = ["Artboards on the canvas:"]
     for board in doc.artboards:
         state = "empty" if not board.html.strip() else f"{len(ids_in(board.html))} nodes"
+        if board.id == CANVAS_ID:
+            lines.append(f"- {board.id}: layers the user drew outside any frame ({state})")
+            continue
         lines.append(
             f'- {board.id} "{board.name}" {round(board.width)}x{round(board.height)} ({state})'
         )

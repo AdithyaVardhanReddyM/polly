@@ -61,6 +61,8 @@ def conversation(messages: list[Any]) -> tuple[str, str]:
             said = _text(message.content)
         if kind == "human":
             extra = getattr(message, "additional_kwargs", None) or {}
+            if extra.get("polly_hidden"):
+                continue  # Polly's nudge to the model, not the user's request
             asked = str(extra.get("polly_display") or _text(message.content))
             break
     return _clip(asked, MAX_TEXT_CHARS), _clip(said, MAX_TEXT_CHARS)

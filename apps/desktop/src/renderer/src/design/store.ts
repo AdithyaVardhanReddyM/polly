@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 import type { CoderEvent } from '../../../shared/contracts'
 import { api } from '../api'
+import { frameNames } from '../coder/toolMeta'
 import { capture } from './exporters'
-import { CanvasFrame, cleanClone, isAbsolute, isContainer } from './frame'
+import { boxOf, CanvasFrame, cleanClone, isAbsolute, isContainer } from './frame'
 import {
   AGENT_COLORS,
+  CANVAS_ID,
   clamp,
+  isLoose,
   newId,
   refKey,
   sameRef,
@@ -28,6 +31,8 @@ const GAP = 120
 const MIN_ZOOM = 0.05
 const MAX_ZOOM = 8
 const HISTORY = 100
+const SAVE_RETRY = 4000
+const SAVE_TRIES = 5
 
 export interface Presence {
   label: string
@@ -58,8 +63,12 @@ interface CanvasState {
   canRedo: boolean
   saveState: 'saved' | 'saving' | 'error'
   presence: Record<string, Presence>
+  /** Canvas pixels covered by the floating panels, kept clear when fitting. */
+  insets: { left: number; right: number }
 
   load: (sessionId: string | null) => Promise<void>
+  /** The design's session, made now if it has none yet (uploads need one). */
+  ensureSession: () => Promise<string | null>
   flush: () => Promise<void>
   bump: () => void
   commit: () => void
@@ -71,11 +80,14 @@ interface CanvasState {
   select: (refs: NodeRef[]) => void
   setEditing: (ref: NodeRef | null) => void
   setView: (view: View) => void
+  setInsets: (insets: { left: number; right: number }) => void
   zoomAt: (x: number, y: number, factor: number) => void
   zoomTo: (zoom: number) => void
   fit: (boardId?: string) => void
 
   addBoard: (board: Partial<Artboard>) => Artboard
+  /** The board that holds layers drawn outside any frame, made on first use. */
+  looseLayer: () => NodeRef
   updateBoard: (id: string, patch: Partial<Artboard>, commit?: boolean) => void
   setStyle: (props: Record<string, string | null>, commit?: boolean) => void
   setFonts: (fonts: string[]) => void
@@ -101,10 +113,27 @@ let future: Snapshot[] = []
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let saving: Promise<void> = Promise.resolve()
 let dirty = false
+let failedSaves = 0
 let clipboard: { html: string; absolute: boolean }[] = []
 const presenceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+interface SessionMaker {
+  /** Make a session for the design and return its id. */
+  create: () => Promise<string | null>
+  /** Show it as the open design, once the canvas has saved into it. */
+  open: (id: string) => void
+}
+let maker: SessionMaker | null = null
+let adopting: Promise<void> | null = null
 
 export const getFrame = (): CanvasFrame | null => frame
+
+/**
+ * How a canvas without a session gets one: the first hand edit on a new design
+ * calls this, and the canvas then saves into the session it returns.
+ */
+export function setSessionMaker(next: SessionMaker | null): void {
+  maker = next
+}
 
 const emptyDoc = (): DesignDoc => ({ rev: 0, artboards: [], fonts: [], selection: [] })
 const snap = (doc: DesignDoc): Snapshot => ({
@@ -123,7 +152,55 @@ export const useCanvas = create<CanvasState>((set, get) => {
   function scheduleSave(): void {
     dirty = true
     if (saveTimer) clearTimeout(saveTimer)
+    if (!get().sessionId) {
+      void adoptSession()
+      return
+    }
     saveTimer = setTimeout(() => void get().flush(), 600)
+  }
+
+  /** A new design drawn by hand: make its session, then save what is there. */
+  function adoptSession(): Promise<void> {
+    if (adopting) return adopting
+    if (!maker) return Promise.resolve()
+    const { create, open } = maker
+    adopting = (async () => {
+      const id = await create()
+      if (!id || get().sessionId) return
+      // The canvas takes the session before the page hears of it, so opening it
+      // does not reload an empty document over what was drawn.
+      set({ sessionId: id, loaded: true })
+      await get().flush()
+      open(id)
+    })().finally(() => {
+      adopting = null
+    })
+    return adopting
+  }
+
+  /** Where everything is, in canvas coordinates: frames, and the loose layers' own boxes. */
+  function bounds(boardId?: string): { left: number; top: number; right: number; bottom: number } | null {
+    const boxes: { left: number; top: number; right: number; bottom: number }[] = []
+    for (const b of get().doc.artboards) {
+      if (boardId && b.id !== boardId) continue
+      if (!isLoose(b.id)) {
+        boxes.push({ left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height })
+        continue
+      }
+      const root = frame?.root(b.id)
+      for (const child of Array.from(root?.children ?? [])) {
+        const box = boxOf(child)
+        if (!box.width && !box.height) continue
+        boxes.push({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height })
+      }
+    }
+    if (boxes.length === 0) return null
+    return {
+      left: Math.min(...boxes.map((b) => b.left)),
+      top: Math.min(...boxes.map((b) => b.top)),
+      right: Math.max(...boxes.map((b) => b.right)),
+      bottom: Math.max(...boxes.map((b) => b.bottom))
+    }
   }
 
   /** Read the DOM back into the document. */
@@ -203,12 +280,26 @@ export const useCanvas = create<CanvasState>((set, get) => {
     canRedo: false,
     saveState: 'saved',
     presence: {},
+    insets: { left: 0, right: 0 },
 
     async load(sessionId) {
+      if (sessionId && sessionId === get().sessionId && get().loaded) {
+        // Already ours: a design that just got its session, or the page coming back
+        // with a fresh frame that needs the document put into it again.
+        if (frame && frame.world.children.length === 0 && get().doc.artboards.length) {
+          await frame.ready
+          remount(get().doc)
+          set((s) => ({ version: s.version + 1 }))
+          get().fit()
+        }
+        return
+      }
       if (saveTimer) clearTimeout(saveTimer)
       await get().flush()
       past = []
       future = []
+      dirty = false
+      failedSaves = 0
       set({
         sessionId,
         loaded: false,
@@ -218,7 +309,8 @@ export const useCanvas = create<CanvasState>((set, get) => {
         editing: null,
         presence: {},
         canUndo: false,
-        canRedo: false
+        canRedo: false,
+        saveState: 'saved'
       })
       frame?.mount([])
       if (!sessionId) return
@@ -231,6 +323,11 @@ export const useCanvas = create<CanvasState>((set, get) => {
       last = snap(doc)
       set((s) => ({ doc, loaded: true, version: s.version + 1 }))
       get().fit()
+    },
+
+    async ensureSession() {
+      if (!get().sessionId) await adoptSession()
+      return get().sessionId
     },
 
     async flush() {
@@ -256,8 +353,18 @@ export const useCanvas = create<CanvasState>((set, get) => {
           }
         }
         if (get().sessionId !== sessionId) return
-        if (res.ok) set((s) => ({ doc: { ...s.doc, rev: res.data.rev }, saveState: 'saved' }))
-        else set({ saveState: 'error' })
+        if (res.ok) {
+          failedSaves = 0
+          set((s) => ({ doc: { ...s.doc, rev: res.data.rev }, saveState: 'saved' }))
+        } else {
+          // Try again shortly (the server may have been restarting); the next edit tries too.
+          dirty = true
+          set({ saveState: 'error' })
+          if (++failedSaves < SAVE_TRIES) {
+            if (saveTimer) clearTimeout(saveTimer)
+            saveTimer = setTimeout(() => void get().flush(), SAVE_RETRY)
+          }
+        }
       })
       await saving
     },
@@ -267,7 +374,13 @@ export const useCanvas = create<CanvasState>((set, get) => {
     },
 
     commit() {
-      const doc = readDom()
+      let doc = readDom()
+      // The loose layer goes once its last layer does.
+      const layer = doc.artboards.find((b) => isLoose(b.id))
+      if (layer && !layer.html.trim()) {
+        doc = { ...doc, artboards: doc.artboards.filter((b) => b !== layer) }
+        remount(doc)
+      }
       const now = snap(doc)
       if (same(now, last)) {
         set((s) => ({ doc, version: s.version + 1 }))
@@ -308,7 +421,9 @@ export const useCanvas = create<CanvasState>((set, get) => {
 
     select(refs) {
       const seen = new Set<string>()
-      const unique = refs.filter((r) => !seen.has(refKey(r)) && seen.add(refKey(r)))
+      const unique = refs.filter(
+        (r) => !(isLoose(r.boardId) && r.nodeId === null) && !seen.has(refKey(r)) && seen.add(refKey(r))
+      )
       set({ selection: unique })
     },
 
@@ -319,6 +434,11 @@ export const useCanvas = create<CanvasState>((set, get) => {
     setView(view) {
       frame?.setView(view)
       set({ view })
+    },
+
+    setInsets(insets) {
+      const now = get().insets
+      if (now.left !== insets.left || now.right !== insets.right) set({ insets })
     },
 
     zoomAt(x, y, factor) {
@@ -337,51 +457,73 @@ export const useCanvas = create<CanvasState>((set, get) => {
     fit(boardId) {
       const el = frame?.iframe
       if (!el) return
-      const boards = get().doc.artboards.filter((b) => !boardId || b.id === boardId)
-      if (boards.length === 0) {
-        get().setView({ x: el.clientWidth / 2 - 195, y: 80, zoom: 1 })
+      // Fit into the part of the canvas the floating panels leave clear.
+      const { left: inLeft, right: inRight } = get().insets
+      const width = Math.max(200, el.clientWidth - inLeft - inRight)
+      const box = bounds(boardId)
+      if (!box) {
+        get().setView({ x: inLeft + width / 2, y: el.clientHeight / 2, zoom: 1 })
         return
       }
-      const left = Math.min(...boards.map((b) => b.x))
-      const top = Math.min(...boards.map((b) => b.y))
-      const right = Math.max(...boards.map((b) => b.x + b.width))
-      const bottom = Math.max(...boards.map((b) => b.y + b.height))
-      const pad = 72
+      const w = Math.max(1, box.right - box.left)
+      const h = Math.max(1, box.bottom - box.top)
+      const pad = 64
       const zoom = clamp(
-        Math.min(
-          (el.clientWidth - pad * 2) / (right - left),
-          (el.clientHeight - pad * 2 - 20) / (bottom - top)
-        ),
+        Math.min((width - pad * 2) / w, (el.clientHeight - pad * 2 - 40) / h),
         MIN_ZOOM,
         1
       )
       get().setView({
         zoom,
-        x: (el.clientWidth - (right - left) * zoom) / 2 - left * zoom,
-        y: (el.clientHeight - (bottom - top) * zoom) / 2 - top * zoom + 10
+        x: inLeft + (width - w * zoom) / 2 - box.left * zoom,
+        // A little high of centre: the toolbar sits along the bottom.
+        y: (el.clientHeight - 40 - h * zoom) / 2 - box.top * zoom + 6
       })
     },
 
     addBoard(partial) {
-      const { doc } = get()
+      const current = readDom()
+      const frames = current.artboards.filter((b) => !isLoose(b.id))
       const width = partial.width ?? 390
-      const right = doc.artboards.length ? Math.max(...doc.artboards.map((b) => b.x + b.width)) : 0
-      const top = doc.artboards.length ? Math.min(...doc.artboards.map((b) => b.y)) : 0
+      const right = frames.length ? Math.max(...frames.map((b) => b.x + b.width)) : 0
+      const top = frames.length ? Math.min(...frames.map((b) => b.y)) : 0
       const board: Artboard = {
         id: newId('a'),
-        name: partial.name ?? `Frame ${doc.artboards.length + 1}`,
-        x: partial.x ?? (doc.artboards.length ? right + GAP : 0),
+        name: partial.name ?? `Frame ${frames.length + 1}`,
+        x: partial.x ?? (frames.length ? right + GAP : 0),
         y: partial.y ?? top,
         width,
         height: partial.height ?? 844,
         background: partial.background ?? '#ffffff',
         html: partial.html ?? ''
       }
-      const next = { ...readDom(), artboards: [...readDom().artboards, board] }
+      // New frames go under the loose layers, which stay on top of everything.
+      const loose = current.artboards.filter((b) => isLoose(b.id))
+      const next = { ...current, artboards: [...frames, board, ...loose] }
       remount(next)
       set({ doc: next, selection: [{ boardId: board.id, nodeId: null }] })
       get().commit()
       return board
+    },
+
+    looseLayer() {
+      const ref = { boardId: CANVAS_ID, nodeId: null }
+      if (get().doc.artboards.some((b) => isLoose(b.id))) return ref
+      const layer: Artboard = {
+        id: CANVAS_ID,
+        name: 'Canvas',
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        background: 'transparent',
+        html: ''
+      }
+      const current = readDom()
+      const next = { ...current, artboards: [...current.artboards, layer] }
+      remount(next)
+      set({ doc: next })
+      return ref
     },
 
     updateBoard(id, patch, commit = true) {
@@ -505,8 +647,9 @@ export const useCanvas = create<CanvasState>((set, get) => {
     paste() {
       if (!frame || clipboard.length === 0) return
       const { selection, doc } = get()
-      const target = selection[0] ?? (doc.artboards[0] && { boardId: doc.artboards[0].id, nodeId: null })
-      if (!target) return
+      const firstFrame = doc.artboards.find((b) => !isLoose(b.id))
+      const target =
+        selection[0] ?? (firstFrame ? { boardId: firstFrame.id, nodeId: null } : get().looseLayer())
       const anchor = frame.node(target)
       if (!anchor) return
       // Into a selected container or artboard; otherwise next to the selected node.
@@ -523,6 +666,13 @@ export const useCanvas = create<CanvasState>((set, get) => {
         if (item.absolute) {
           node.style.left = `${px(node.style.left) + 16}px`
           node.style.top = `${px(node.style.top) + 16}px`
+        } else if (isLoose(target.boardId)) {
+          // Out of its layout and onto the open canvas: place it where the user is looking.
+          const { view } = get()
+          const el = frame.iframe
+          node.style.position = 'absolute'
+          node.style.left = `${Math.round((el.clientWidth / 2 - view.x) / view.zoom)}px`
+          node.style.top = `${Math.round((el.clientHeight / 2 - view.y) / view.zoom)}px`
         }
         if (after) after.after(node)
         else parent.appendChild(node)
@@ -545,7 +695,8 @@ export const useCanvas = create<CanvasState>((set, get) => {
       if (ordered.every(isAbsolute)) {
         const boxes = ordered.map((el) => {
           const h = el as HTMLElement
-          return { el: h, l: h.offsetLeft, t: h.offsetTop, w: h.offsetWidth, h: h.offsetHeight }
+          const box = boxOf(h)
+          return { el: h, l: box.left, t: box.top, w: box.width, h: box.height }
         })
         const l = Math.min(...boxes.map((b) => b.l))
         const t = Math.min(...boxes.map((b) => b.t))
@@ -583,8 +734,8 @@ export const useCanvas = create<CanvasState>((set, get) => {
       const children = Array.from(el.children) as HTMLElement[]
       for (const child of children) {
         if (absolute && isAbsolute(child)) {
-          child.style.left = `${child.offsetLeft + el.offsetLeft}px`
-          child.style.top = `${child.offsetTop + el.offsetTop}px`
+          child.style.left = `${boxOf(child).left + boxOf(el).left}px`
+          child.style.top = `${boxOf(child).top + boxOf(el).top}px`
         }
         el.before(child)
       }
@@ -639,7 +790,7 @@ export const useCanvas = create<CanvasState>((set, get) => {
       }
       const parent = frame?.node(ref)?.parentElement ?? null
       const up = frame?.refOf(parent)
-      set({ selection: up ? [up] : [] })
+      set({ selection: up && !(isLoose(up.boardId) && up.nodeId === null) ? [up] : [] })
     },
 
     onAgentEvent(event, sessionId) {
@@ -663,12 +814,14 @@ export const useCanvas = create<CanvasState>((set, get) => {
           const board = event.artboard
           const before = readDom()
           const exists = before.artboards.some((b) => b.id === board.id)
+          // A new frame goes under the loose layers, which stay on top.
+          const loose = before.artboards.filter((b) => isLoose(b.id))
           const doc = {
             ...before,
             rev: event.rev,
             artboards: exists
               ? before.artboards.map((b) => (b.id === board.id ? board : b))
-              : [...before.artboards, board]
+              : [...before.artboards.filter((b) => !isLoose(b.id)), board, ...loose]
           }
           remount(doc)
           past.push(last)
@@ -758,6 +911,13 @@ export const useCanvas = create<CanvasState>((set, get) => {
       clamp((a.top + a.height / 2 - b.top) / b.height, 0.04, 0.96)
     )
   }
+})
+
+// Steps in the chat name frames, not ids.
+useCanvas.subscribe((state, prev) => {
+  if (state.doc.artboards === prev.doc.artboards) return
+  frameNames.clear()
+  for (const b of state.doc.artboards) frameNames.set(b.id, b.name)
 })
 
 export function attachFrame(next: CanvasFrame | null): void {

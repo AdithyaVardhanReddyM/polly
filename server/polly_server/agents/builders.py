@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from polly_server import memory, model_registry, sandbox
 from polly_server import tools as tool_registry
-from polly_server.agents import catalog, delegation, runtime, team
+from polly_server.agents import catalog, delegation, runtime, team, voice
 from polly_server.agents.spec import AgentSpec
 from polly_server.coder.context import CoderContext
 from polly_server.config import settings
@@ -69,7 +69,7 @@ def _resolve(spec: AgentSpec, apps: tuple[str, ...]) -> AgentSpec:
     subagents = tuple(replace(s, tools=tool_registry.available(s.tools)) for s in spec.subagents)
     tools = tool_registry.available(spec.tools)
     searches = bool(tools) if spec.division == "custom" else spec.id != "designer"
-    prompt = _dated(spec.system_prompt, sources=searches)
+    prompt = f"{_dated(spec.system_prompt, sources=searches)}\n\n{voice.REPORTING}"
     if spec.sandbox and sandbox.available():
         prompt = f"{prompt}\n\n{sandbox.PROMPT}"
     return replace(
@@ -105,6 +105,7 @@ def build_agent(
     # Work goes out from the lead and comes back to it: a teammate has no team.
     mates = team.roster(session) if as_agent is None else ()
     model_id = (session.model if as_agent is None else "") or default_model(spec.id)
+    effort = session.reasoning_effort if as_agent is None else None
 
     # Connecting an app, changing what the agent may use, editing a custom
     # agent or changing the team rebuilds it on the next turn.
@@ -114,6 +115,7 @@ def build_agent(
         session.id,
         spec.id,
         model_id,
+        effort,
         dt.date.today().isoformat(),
         apps,
         made_as,
@@ -127,7 +129,7 @@ def build_agent(
     if mates:
         connected.append(delegation.tool_for(session, mates))
         spec = replace(spec, system_prompt=f"{spec.system_prompt}\n\n{team.prompt(session, mates)}")
-    main = model or chat_model(model=model_id)
+    main = model or chat_model(model=model_id, reasoning_effort=effort)
     options: dict[str, Any] = {
         "checkpointer": checkpointer or get_checkpointer(),
         # Same shape as the Coder's: the run passes one context to every agent.

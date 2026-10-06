@@ -134,6 +134,7 @@ export function Research({
         <AgentComposer
           store={useResearch}
           disabled={!searchReady}
+          defaultModel={agent?.model ?? ''}
           mentionable={joinable(agents).filter((a) => a.id !== agent?.id)}
           placeholder={session ? 'Ask a follow-up…' : 'What should Polly research?'}
         >

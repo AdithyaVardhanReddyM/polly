@@ -78,7 +78,8 @@ def build_coder(
 
     apps = assignments.active("coder")
     mates = team.roster(session)
-    key = (session.id, session.model, apps, team.signature(session, mates))
+    effort = session.reasoning_effort
+    key = (session.id, session.model, effort, apps, team.signature(session, mates))
     if use_cache and key in _cache:
         return _cache[key]
 
@@ -99,7 +100,7 @@ def build_coder(
         connected.append(delegation.tool_for(session, mates))
         spec = replace(spec, system_prompt=f"{spec.system_prompt}\n\n{team.prompt(session, mates)}")
 
-    main = model or chat_model(model=session.model)
+    main = model or chat_model(model=session.model, reasoning_effort=effort)
     fast = fast_model or chat_model("fast")
 
     agent = runtime.build(

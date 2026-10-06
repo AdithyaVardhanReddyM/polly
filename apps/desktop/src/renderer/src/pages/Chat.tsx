@@ -198,6 +198,7 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
         <AgentComposer
           store={useChat}
           mentionable={mentionable}
+          defaultModel={agent?.model ?? ''}
           placeholder={session ? 'Reply…' : `Message ${agent.name}…`}
         />
       </section>

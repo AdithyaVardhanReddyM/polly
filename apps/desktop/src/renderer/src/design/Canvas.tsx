@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { AgentPresence } from './AgentPresence'
 import {
+  boxOf,
   CanvasFrame,
   cleanClone,
   isAbsolute,
@@ -11,7 +12,7 @@ import {
   toRect,
   totalRotation
 } from './frame'
-import { clamp, refKey, round, sameRef, type NodeRef, type Rect } from './model'
+import { isLoose, refKey, round, sameRef, type NodeRef, type Rect, type Tool } from './model'
 import { contains, snap, union, type Guide } from './snap'
 import { attachFrame, getFrame, useCanvas } from './store'
 
@@ -48,11 +49,20 @@ interface MoveItem {
 
 type Drag =
   | { kind: 'pan'; start: Point; view: Point }
-  | { kind: 'pending'; start: Point; hit: NodeRef | null; inside: boolean; shift: boolean; alt: boolean }
+  | {
+      kind: 'pending'
+      start: Point
+      hit: NodeRef | null
+      inside: boolean
+      shift: boolean
+      alt: boolean
+      /** Dragging from here moves this frame: its background, or a frame already selected. */
+      board: string | null
+    }
   | { kind: 'marquee'; start: Point; keep: NodeRef[] }
   | { kind: 'move'; start: Point; items: MoveItem[]; rect: Rect; targets: Rect[] }
   | { kind: 'reorder'; start: Point; el: HTMLElement; ref: NodeRef; rect: Rect; drop: DropTarget | null }
-  | { kind: 'board'; start: Point; id: string; x: number; y: number; rect: Rect; targets: Rect[] }
+  | { kind: 'board'; start: Point; items: { id: string; x: number; y: number }[]; rect: Rect; targets: Rect[] }
   | {
       kind: 'resize'
       start: Point
@@ -69,16 +79,23 @@ type Drag =
       targets: Rect[]
     }
   | { kind: 'rotate'; ref: NodeRef; center: Point; angle: number; base: number }
-  | { kind: 'draw'; start: Point; tool: 'frame' | 'rect' | 'ellipse' }
+  | { kind: 'draw'; start: Point; tool: DrawTool }
+
+type DrawTool = Extract<Tool, 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow'>
+const DRAW_TOOLS: Tool[] = ['frame', 'rect', 'ellipse', 'line', 'arrow']
 
 interface Fx {
   guides: Guide[]
   marquee: Rect | null
   drop: DropTarget | null
   ghost: Rect | null
+  /** What is being drawn, as the pointer moves. */
+  draw: { tool: DrawTool; rect: Rect; from: Point; to: Point; size: string } | null
 }
 
-const NO_FX: Fx = { guides: [], marquee: null, drop: null, ghost: null }
+const NO_FX: Fx = { guides: [], marquee: null, drop: null, ghost: null, draw: null }
+/** A line's box is this tall, so it is easy to grab. */
+const LINE_GRIP = 24
 const px = (v: string): number => parseFloat(v) || 0
 const rectOf = (a: Point, b: Point): Rect => ({
   x: Math.min(a.x, b.x),
@@ -92,11 +109,61 @@ function stripIds(el: Element): void {
   el.querySelectorAll('[data-id]').forEach((n) => n.removeAttribute('data-id'))
 }
 
-/** The one element filling an artboard: dragging on it draws a marquee. */
+/** The one element filling an artboard, its background: dragging on it moves the frame. */
 function isBackdrop(el: HTMLElement): boolean {
   const parent = el.parentElement
   if (!parent?.classList.contains('pl-root') || isAbsolute(el)) return false
-  return el.offsetWidth * el.offsetHeight >= parent.offsetWidth * parent.offsetHeight * 0.85
+  const area = parent.offsetWidth * parent.offsetHeight
+  return area > 0 && el.offsetWidth * el.offsetHeight >= area * 0.85
+}
+
+/** The frame under a point, looking past the layers being dragged; null over open canvas. */
+function frameAt(frame: CanvasFrame, p: Point, skip: Element[]): string | null {
+  for (const el of frame.doc.elementsFromPoint(p.x, p.y)) {
+    if (skip.some((s) => s.contains(el))) continue
+    const board = el.closest<HTMLElement>('.pl-board')?.dataset.board
+    if (board && !isLoose(board)) return board
+  }
+  return null
+}
+
+/** The rectangle being drawn: Shift keeps it square, Alt draws it from the centre. */
+function drawnRect(a: Point, b: Point, square: boolean, centred: boolean): Rect {
+  let dx = b.x - a.x
+  let dy = b.y - a.y
+  if (square) {
+    const side = Math.max(Math.abs(dx), Math.abs(dy))
+    dx = Math.sign(dx || 1) * side
+    dy = Math.sign(dy || 1) * side
+  }
+  if (centred) return { x: a.x - Math.abs(dx), y: a.y - Math.abs(dy), width: Math.abs(dx) * 2, height: Math.abs(dy) * 2 }
+  return rectOf(a, { x: a.x + dx, y: a.y + dy })
+}
+
+/** A line's end: Shift snaps it to 45° steps. */
+function lineEnd(a: Point, b: Point, snapAngle: boolean): Point {
+  if (!snapAngle) return b
+  const len = Math.hypot(b.x - a.x, b.y - a.y)
+  const angle = Math.round(Math.atan2(b.y - a.y, b.x - a.x) / (Math.PI / 4)) * (Math.PI / 4)
+  return { x: a.x + Math.cos(angle) * len, y: a.y + Math.sin(angle) * len }
+}
+
+/** Colours for things drawn on the open canvas, readable on it in either theme. */
+function inkFor(boardId: string): string {
+  if (!isLoose(boardId)) return '#111111'
+  return document.documentElement.dataset.theme === 'dark' ? '#f4f4f5' : '#1e1e1e'
+}
+
+/** A line or arrow from `a` to `b` (in the board's pixels), as an SVG layer. */
+function lineHtml(a: Point, b: Point, arrow: boolean, color: string): string {
+  const len = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y))
+  const deg = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
+  const cx = (a.x + b.x) / 2
+  const cy = (a.y + b.y) / 2
+  const head = arrow
+    ? `<svg x="100%" y="50%" overflow="visible"><path d="M-11 -7 L0 0 L-11 7"></path></svg>`
+    : ''
+  return `<svg data-name="${arrow ? 'Arrow' : 'Line'}" style="position: absolute; left: ${round(cx - len / 2)}px; top: ${round(cy - LINE_GRIP / 2)}px; width: ${round(len)}px; height: ${LINE_GRIP}px; rotate: ${round(deg, 0.1)}deg; overflow: visible; color: ${color}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="0" y1="50%" x2="100%" y2="50%"></line>${head}</svg>`
 }
 
 function layoutAxis(el: HTMLElement): 'x' | 'y' {
@@ -115,10 +182,14 @@ function dropTarget(frame: CanvasFrame, p: Point, dragged: Element | null): Drop
   let container = under as HTMLElement | undefined | null
   while (container && !isContainer(container)) container = container.parentElement
   if (!container) return null
+  // The open canvas has no layout to drop into.
+  const isLooseRoot = (el: Element | null): boolean =>
+    !!el?.classList.contains('pl-root') && !!el.parentElement?.classList.contains('is-loose')
+  if (isLooseRoot(container)) return null
 
   // Close to a container's edge means "next to it", not "inside it".
   const parent = container.parentElement
-  if (!container.classList.contains('pl-root') && parent && isContainer(parent) && !isAbsolute(container)) {
+  if (!container.classList.contains('pl-root') && parent && isContainer(parent) && !isAbsolute(container) && !isLooseRoot(parent)) {
     const r = container.getBoundingClientRect()
     const edge = Math.min(8, r.width / 4, r.height / 4)
     const near =
@@ -178,10 +249,15 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
   useEffect(() => {
     if (!iframe.current || !host.current) return
     const frame = new CanvasFrame(iframe.current)
+    frame.onChange = () => useCanvas.getState().bump()
     attachFrame(frame)
     const paint = (): void => {
-      if (host.current)
-        frame.setBackground(getComputedStyle(host.current).getPropertyValue('--canvas-bg').trim())
+      if (!host.current) return
+      const css = getComputedStyle(host.current)
+      frame.setBackground(
+        css.getPropertyValue('--canvas-bg').trim(),
+        css.getPropertyValue('--canvas-dot').trim()
+      )
     }
     paint()
     const theme = new MutationObserver(paint)
@@ -232,6 +308,8 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
       el.removeAttribute('spellcheck')
       frame.doc.getSelection()?.removeAllRanges()
       frame.iframe.style.pointerEvents = 'none'
+      // Hand the keyboard back to the app, or shortcuts would go to the frame's document.
+      if (document.activeElement === frame.iframe) frame.iframe.blur()
       const state = useCanvas.getState()
       if (!el.textContent?.trim()) {
         el.remove()
@@ -252,8 +330,10 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
   const addImage = useCallback(async (file: File, at?: Point) => {
     const frame = getFrame()
     const store = useCanvas.getState()
-    if (!frame || !store.sessionId || !file.type.startsWith('image/')) return
-    const uploaded = await api.design.upload(store.sessionId, file, file.name)
+    if (!frame || !file.type.startsWith('image/')) return
+    const sessionId = await store.ensureSession()
+    if (!sessionId) return
+    const uploaded = await api.design.upload(sessionId, file, file.name)
     if (!uploaded.ok) return
     const size = await new Promise<{ w: number; h: number }>((resolve) => {
       const img = new Image()
@@ -268,38 +348,23 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
       store.commit()
       return
     }
-    let target = at ? frame.hit(at.x, at.y) : (store.selection[0] ?? null)
-    if (!target) {
-      const first = useCanvas.getState().doc.artboards[0]
-      if (first && !at) target = { boardId: first.id, nodeId: null }
-    }
-    if (!target) {
-      const w = Math.min(size.w, 1440)
-      const world = at
-        ? { x: (at.x - store.view.x) / store.view.zoom, y: (at.y - store.view.y) / store.view.zoom }
-        : undefined
-      const board = store.addBoard({
-        name: file.name.replace(/\.[^.]+$/, ''),
-        width: w,
-        height: Math.round((size.h * w) / size.w),
-        ...world
-      })
-      store.insertHtml(
-        `<img src="${uploaded.data.url}" alt="" style="width: 100%; height: 100%; object-fit: cover; display: block">`,
-        { boardId: board.id, nodeId: null }
-      )
-      return
-    }
-    const root = frame.root(target.boardId) as HTMLElement
-    const zoom = store.view.zoom
-    const w = Math.min(size.w, root.offsetWidth * 0.6)
-    const h = (size.h * w) / size.w
+    // Onto the frame under the drop (or the selection's frame); otherwise the open canvas.
+    let boardId = (at ? frame.hit(at.x, at.y) : store.selection[0])?.boardId ?? null
+    if (!boardId && !at) boardId = store.doc.artboards.find((b) => !isLoose(b.id))?.id ?? null
+    if (!boardId) boardId = store.looseLayer().boardId
+    const root = frame.root(boardId) as HTMLElement
+    const { zoom } = store.view
     const r = root.getBoundingClientRect()
-    const left = at ? (at.x - r.left) / zoom - w / 2 : (root.offsetWidth - w) / 2
-    const top = at ? (at.y - r.top) / zoom - h / 2 : (root.offsetHeight - h) / 2
+    const loose = isLoose(boardId)
+    const w = Math.min(size.w, loose ? 800 : root.offsetWidth * 0.6)
+    const h = (size.h * w) / size.w
+    const centre = at ?? { x: frame.iframe.clientWidth / 2, y: frame.iframe.clientHeight / 2 }
+    const inFrameCentre = !at && !loose
+    const left = inFrameCentre ? (root.offsetWidth - w) / 2 : (centre.x - r.left) / zoom - w / 2
+    const top = inFrameCentre ? (root.offsetHeight - h) / 2 : (centre.y - r.top) / zoom - h / 2
     store.insertHtml(
-      `<img src="${uploaded.data.url}" alt="" style="position: absolute; left: ${round(left)}px; top: ${round(top)}px; width: ${round(w)}px; height: ${round(h)}px; object-fit: cover">`,
-      { boardId: target.boardId, nodeId: null }
+      `<img src="${uploaded.data.url}" alt="" data-name="${file.name.replace(/\.[^.]+$/, '').replace(/["<>&]/g, '')}" style="position: absolute; left: ${round(left)}px; top: ${round(top)}px; width: ${round(w)}px; height: ${round(h)}px; object-fit: cover">`,
+      { boardId, nodeId: null }
     )
   }, [])
 
@@ -357,43 +422,36 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
 
     const label = target.closest<HTMLElement>('[data-board-label]')?.dataset.boardLabel
     if (label) {
-      const board = store.doc.artboards.find((b) => b.id === label)
-      const rect = frame.rect({ boardId: label, nodeId: null })
-      if (!board || !rect) return
-      store.select([{ boardId: label, nodeId: null }])
-      drag.current = {
-        kind: 'board',
-        start: p,
-        id: label,
-        x: board.x,
-        y: board.y,
-        rect,
-        targets: store.doc.artboards
-          .filter((b) => b.id !== label)
-          .map((b) => frame.rect({ boardId: b.id, nodeId: null }))
-          .filter((r): r is Rect => !!r)
+      const picked = store.selection.some((s) => s.boardId === label && s.nodeId === null)
+      if (e.shiftKey) {
+        const ref = { boardId: label, nodeId: null }
+        store.select(picked ? store.selection.filter((s) => !sameRef(s, ref)) : [...store.selection, ref])
+        return
       }
+      if (!picked) store.select([{ boardId: label, nodeId: null }])
+      beginBoardMove(frame, p)
       return
     }
 
-    if (store.tool === 'frame' || store.tool === 'rect' || store.tool === 'ellipse') {
-      drag.current = { kind: 'draw', start: p, tool: store.tool }
+    if (DRAW_TOOLS.includes(store.tool)) {
+      drag.current = { kind: 'draw', start: p, tool: store.tool as DrawTool }
       return
     }
     if (store.tool === 'text') {
       const hit = frame.hit(p.x, p.y)
       store.setTool('select')
-      if (!hit) return
-      const el = frame.node(hit)
-      if (el && hit.nodeId && isTextLeaf(el)) {
+      const el = hit ? frame.node(hit) : null
+      if (el && hit?.nodeId && isTextLeaf(el)) {
         startEdit(hit)
         return
       }
-      const root = frame.root(hit.boardId) as HTMLElement
+      // Into the frame under the pointer, or onto the open canvas.
+      const boardId = hit?.boardId ?? store.looseLayer().boardId
+      const root = frame.root(boardId) as HTMLElement
       const r = root.getBoundingClientRect()
       const [ref] = store.insertHtml(
-        `<div style="position: absolute; left: ${round((p.x - r.left) / store.view.zoom)}px; top: ${round((p.y - r.top) / store.view.zoom - 14)}px; font-size: 24px; line-height: 1.2; color: #111111; white-space: nowrap">Text</div>`,
-        { boardId: hit.boardId, nodeId: null }
+        `<div style="position: absolute; left: ${round((p.x - r.left) / store.view.zoom)}px; top: ${round((p.y - r.top) / store.view.zoom - 14)}px; font-size: 24px; line-height: 1.2; color: ${inkFor(boardId)}; white-space: nowrap">Text</div>`,
+        { boardId, nodeId: null }
       )
       if (ref) requestAnimationFrame(() => startEdit(ref))
       return
@@ -404,8 +462,40 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
     const inside =
       !!hitEl &&
       store.selection.some((s) => s.nodeId !== null && frame.node(s)?.contains(hitEl) && s.boardId === hit?.boardId)
-    if (!e.shiftKey && !inside) store.select(hit ? [hit] : [])
-    drag.current = { kind: 'pending', start: p, hit, inside, shift: e.shiftKey, alt: e.altKey }
+    // A selected frame moves wherever it is grabbed; any frame moves by its background.
+    const boardPicked =
+      !!hit && store.selection.some((s) => s.nodeId === null && s.boardId === hit.boardId)
+    const background =
+      !!hit && !isLoose(hit.boardId) && (hit.nodeId === null || (!!hitEl && isBackdrop(hitEl)))
+    const board = hit && (boardPicked || background) ? hit.boardId : null
+    if (!e.shiftKey && !inside && !boardPicked) store.select(hit ? [hit] : [])
+    drag.current = { kind: 'pending', start: p, hit, inside: inside || boardPicked, shift: e.shiftKey, alt: e.altKey, board }
+  }
+
+  /** Start dragging the selected frames (and the one under the pointer, if not already). */
+  function beginBoardMove(frame: CanvasFrame, p: Point, also?: string): void {
+    const store = useCanvas.getState()
+    const ids = new Set(store.selection.filter((s) => s.nodeId === null).map((s) => s.boardId))
+    if (also && !ids.has(also)) {
+      ids.clear()
+      ids.add(also)
+      store.select([{ boardId: also, nodeId: null }])
+    }
+    const boards = store.doc.artboards.filter((b) => ids.has(b.id))
+    const rects = boards
+      .map((b) => frame.rect({ boardId: b.id, nodeId: null }))
+      .filter((r): r is Rect => !!r)
+    if (rects.length === 0) return
+    drag.current = {
+      kind: 'board',
+      start: p,
+      items: boards.map((b) => ({ id: b.id, x: b.x, y: b.y })),
+      rect: union(rects),
+      targets: store.doc.artboards
+        .filter((b) => !ids.has(b.id) && !isLoose(b.id))
+        .map((b) => frame.rect({ boardId: b.id, nodeId: null }))
+        .filter((r): r is Rect => !!r)
+    }
   }
 
   function beginResize(frame: CanvasFrame, ref: NodeRef, handle: Handle, p: Point): void {
@@ -444,10 +534,10 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
       start: p,
       handle,
       ref,
-      w: el.offsetWidth ?? rect.width / store.view.zoom,
-      h: el.offsetHeight ?? rect.height / store.view.zoom,
-      left: cs.left === 'auto' ? el.offsetLeft : px(cs.left),
-      top: cs.top === 'auto' ? el.offsetTop : px(cs.top),
+      w: boxOf(el).width,
+      h: boxOf(el).height,
+      left: cs.left === 'auto' ? boxOf(el).left : px(cs.left),
+      top: cs.top === 'auto' ? boxOf(el).top : px(cs.top),
       absolute,
       own: rotationOf(el),
       total: totalRotation(el),
@@ -462,7 +552,16 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
       .slice(0, 60)
       .map((c) => toRect(c.getBoundingClientRect()))
     rects.push(toRect(parent.getBoundingClientRect()))
-    return rects
+    // On the open canvas, the frames are the neighbours to line up with.
+    const frame = getFrame()
+    const board = parent.closest<HTMLElement>('.pl-board')?.dataset.board
+    if (frame && board && isLoose(board) && parent.classList.contains('pl-root')) {
+      for (const b of useCanvas.getState().doc.artboards) {
+        const r = isLoose(b.id) ? null : frame.rect({ boardId: b.id, nodeId: null })
+        if (r) rects.push(r)
+      }
+    }
+    return rects.filter((r) => r.width > 0 || r.height > 0)
   }
 
   function marqueePick(frame: CanvasFrame, area: Rect): NodeRef[] {
@@ -509,6 +608,15 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
 
     if (d.kind === 'pending') {
       if (Math.hypot(p.x - d.start.x, p.y - d.start.y) < DRAG_START) return
+      if (d.board && !d.shift) {
+        beginBoardMove(frame, d.start, d.board)
+        d = drag.current
+        store.setHover(null)
+        if (!d || d.kind !== 'board') return
+      }
+    }
+
+    if (d.kind === 'pending') {
       const nodes = store.selection
         .filter((r) => r.nodeId !== null)
         .map((ref) => ({ ref, el: frame.node(ref) as HTMLElement }))
@@ -535,8 +643,8 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
             const cs = frame.view.getComputedStyle(el)
             return {
               el,
-              left: cs.left === 'auto' ? el.offsetLeft : px(cs.left),
-              top: cs.top === 'auto' ? el.offsetTop : px(cs.top)
+              left: cs.left === 'auto' ? boxOf(el).left : px(cs.left),
+              top: cs.top === 'auto' ? boxOf(el).top : px(cs.top)
             }
           }),
           rect: union(els.map((el) => toRect(el.getBoundingClientRect()))),
@@ -602,11 +710,12 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
       case 'board': {
         const moved = { ...d.rect, x: d.rect.x + dx, y: d.rect.y + dy }
         const s = e.metaKey || e.ctrlKey ? { dx: 0, dy: 0, guides: [] } : snap(moved, d.targets, SNAP)
-        store.updateBoard(
-          d.id,
-          { x: round(d.x + (dx + s.dx) / zoom), y: round(d.y + (dy + s.dy) / zoom) },
-          false
-        )
+        for (const item of d.items)
+          store.updateBoard(
+            item.id,
+            { x: round(item.x + (dx + s.dx) / zoom), y: round(item.y + (dy + s.dy) / zoom) },
+            false
+          )
         setFx({ ...NO_FX, guides: s.guides })
         break
       }
@@ -688,9 +797,16 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
         break
       }
 
-      case 'draw':
-        setFx({ ...NO_FX, marquee: rectOf(d.start, p) })
+      case 'draw': {
+        const line = d.tool === 'line' || d.tool === 'arrow'
+        const to = line ? lineEnd(d.start, p, e.shiftKey) : p
+        const rect = line ? rectOf(d.start, to) : drawnRect(d.start, p, e.shiftKey, e.altKey)
+        const size = line
+          ? `${Math.round(Math.hypot(to.x - d.start.x, to.y - d.start.y) / zoom)}`
+          : `${Math.round(rect.width / zoom)} × ${Math.round(rect.height / zoom)}`
+        setFx({ ...NO_FX, draw: { tool: d.tool, rect, from: d.start, to, size } })
         break
+      }
     }
   }
 
@@ -717,22 +833,37 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
         break
 
       case 'move': {
-        // Dropped on another artboard: it moves there.
-        const first = d.items[0]?.el
-        const over = frame.hit(p.x, p.y)
+        // Dropped on another frame, it moves into it; dragged clear of its frame
+        // onto the open canvas, it becomes a loose layer there.
+        const els = d.items.map((i) => i.el)
         const from = store.selection[0]?.boardId
-        if (first && over && from && over.boardId !== from) {
-          const root = frame.root(over.boardId) as HTMLElement
+        const over = frameAt(frame, p, els)
+        let dest: string | null = null
+        if (over && over !== from) dest = over
+        else if (!over && from && !isLoose(from)) {
+          const home = frame.rect({ boardId: from, nodeId: null })
+          const box = union(els.map((el) => toRect(el.getBoundingClientRect())))
+          const clear =
+            !!home &&
+            (box.x >= home.x + home.width ||
+              box.x + box.width <= home.x ||
+              box.y >= home.y + home.height ||
+              box.y + box.height <= home.y)
+          if (clear) dest = store.looseLayer().boardId
+        }
+        if (els.length && dest) {
+          const root = frame.root(dest) as HTMLElement
           const rr = root.getBoundingClientRect()
           const refs: NodeRef[] = []
-          for (const { el } of d.items) {
+          for (const el of els) {
             const r = el.getBoundingClientRect()
             const cx = (r.left + r.width / 2 - rr.left) / zoom
             const cy = (r.top + r.height / 2 - rr.top) / zoom
             root.appendChild(el)
-            el.style.left = `${round(cx - el.offsetWidth / 2)}px`
-            el.style.top = `${round(cy - el.offsetHeight / 2)}px`
-            refs.push({ boardId: over.boardId, nodeId: el.getAttribute('data-id') })
+            const own = boxOf(el)
+            el.style.left = `${round(cx - own.width / 2)}px`
+            el.style.top = `${round(cy - own.height / 2)}px`
+            refs.push({ boardId: dest, nodeId: el.getAttribute('data-id') })
           }
           store.select(refs)
         }
@@ -759,29 +890,41 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
         break
 
       case 'draw': {
-        const area = rectOf(d.start, p)
+        const line = d.tool === 'line' || d.tool === 'arrow'
+        const end = line ? lineEnd(d.start, p, e.shiftKey) : p
+        const area = line ? rectOf(d.start, end) : drawnRect(d.start, p, e.shiftKey, e.altKey)
         const tiny = area.width < 4 && area.height < 4
         store.setTool('select')
         if (d.tool === 'frame') {
+          // A click places a phone-sized frame centred on the pointer.
           store.addBoard({
-            x: round((area.x - store.view.x) / zoom),
-            y: round((area.y - store.view.y) / zoom),
+            x: round(((tiny ? p.x - 195 * zoom : area.x) - store.view.x) / zoom),
+            y: round(((tiny ? p.y - 422 * zoom : area.y) - store.view.y) / zoom),
             width: tiny ? 390 : Math.max(16, round(area.width / zoom)),
             height: tiny ? 844 : Math.max(16, round(area.height / zoom))
           })
           break
         }
+        // Into the frame where the drawing started, or onto the open canvas.
         const hit = frame.hit(d.start.x, d.start.y)
-        if (!hit) break
-        const root = frame.root(hit.boardId) as HTMLElement
+        const boardId = hit?.boardId ?? store.looseLayer().boardId
+        const root = frame.root(boardId) as HTMLElement
         const r = root.getBoundingClientRect()
-        const w = tiny ? 120 : area.width / zoom
-        const h = tiny ? 120 : area.height / zoom
-        const left = (area.x - r.left) / zoom - (tiny ? 60 : 0)
-        const top = (area.y - r.top) / zoom - (tiny ? 60 : 0)
+        const local = (q: Point): Point => ({ x: (q.x - r.left) / zoom, y: (q.y - r.top) / zoom })
+        if (line) {
+          const a = local(d.start)
+          // A click draws a 160px line to the right.
+          const b = tiny ? { x: a.x + 160, y: a.y } : local(end)
+          store.insertHtml(lineHtml(a, b, d.tool === 'arrow', inkFor(boardId)), { boardId, nodeId: null })
+          break
+        }
+        const w = tiny ? 100 : area.width / zoom
+        const h = tiny ? 100 : area.height / zoom
+        const at = local(tiny ? { x: p.x - 50 * zoom, y: p.y - 50 * zoom } : { x: area.x, y: area.y })
+        const ellipse = d.tool === 'ellipse'
         store.insertHtml(
-          `<div style="position: absolute; left: ${round(left)}px; top: ${round(top)}px; width: ${round(w)}px; height: ${round(h)}px; background: #d9d9d9${d.tool === 'ellipse' ? '; border-radius: 9999px' : ''}"></div>`,
-          { boardId: hit.boardId, nodeId: null }
+          `<div data-name="${ellipse ? 'Ellipse' : 'Rectangle'}" style="position: absolute; left: ${round(at.x)}px; top: ${round(at.y)}px; width: ${round(w)}px; height: ${round(h)}px; background: #d9d9d9${ellipse ? '; border-radius: 50%' : ''}"></div>`,
+          { boardId, nodeId: null }
         )
         break
       }
@@ -822,8 +965,17 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
     const typing = (t: EventTarget | null): boolean =>
       t instanceof HTMLElement &&
       (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
+    // The canvas has the keyboard once it, or a panel on it, was last clicked;
+    // a click in the chat hands copy, paste and select-all back to the page.
+    let active = true
+    const onDown = (e: PointerEvent): void => {
+      active = !!(e.target as Element | null)?.closest?.('.design-stage')
+    }
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (typing(e.target)) return
+      if (typing(e.target) || !active) return
+      // Text selected on the page is the user's to copy.
+      if ((e.metaKey || e.ctrlKey) && ['c', 'x'].includes(e.key.toLowerCase()) && window.getSelection()?.toString())
+        return
       const s = useCanvas.getState()
       if (s.editing) return
       const mod = e.metaKey || e.ctrlKey
@@ -887,6 +1039,8 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
         f: 'frame',
         r: 'rect',
         o: 'ellipse',
+        l: e.shiftKey ? 'arrow' : 'line',
+        a: 'arrow',
         t: 'text'
       }
       if (tools[key]) return run(() => s.setTool(tools[key]))
@@ -897,9 +1051,11 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
         if (drag.current?.kind !== 'pan') setPanning(false)
       }
     }
+    window.addEventListener('pointerdown', onDown, true)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     return () => {
+      window.removeEventListener('pointerdown', onDown, true)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
@@ -962,11 +1118,12 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
     if (!frame || !r) return null
     const flat = { cx: r.x + r.width / 2, cy: r.y + r.height / 2, w: r.width, h: r.height, deg: 0 }
     if (ref.nodeId === null) return flat
-    const el = frame.node(ref) as HTMLElement | null
-    if (!el || el.offsetWidth === undefined) return flat
+    const el = frame.node(ref)
+    if (!el) return flat
     const deg = totalRotation(el)
     if (Math.abs(deg) < 0.01) return flat
-    return { ...flat, w: el.offsetWidth * zoom, h: el.offsetHeight * zoom, deg }
+    const own = boxOf(el)
+    return { ...flat, w: own.width * zoom, h: own.height * zoom, deg }
   }
 
   const single = selection.length === 1 ? selection[0] : null
@@ -978,7 +1135,7 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
     <div
       ref={host}
       className={`dz-canvas${editing ? ' is-editing' : ''}`}
-      style={{ cursor, '--dz-dot': `${clamp(20 * zoom, 10, 40)}px`, '--dz-dot-x': `${view.x}px`, '--dz-dot-y': `${view.y}px` } as React.CSSProperties}
+      style={{ cursor }}
     >
       <iframe ref={iframe} className="dz-frame" title="Design canvas" tabIndex={-1} />
       <div
@@ -994,7 +1151,7 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
         onDrop={onDrop}
       >
         {doc.artboards.map((b) => {
-          const r = frame?.rect({ boardId: b.id, nodeId: null })
+          const r = isLoose(b.id) ? null : frame?.rect({ boardId: b.id, nodeId: null })
           if (!r) return null
           const live = presence[b.id]
           const selected = selection.some((s) => s.boardId === b.id && s.nodeId === null)
@@ -1061,7 +1218,9 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
             <span className="dz-size" style={{ transform: `translateX(-50%) rotate(${-singleBox.deg}deg)` }}>
               {single.nodeId === null
                 ? `${Math.round(singleBox.w / zoom)} × ${Math.round(singleBox.h / zoom)}`
-                : `${Math.round((singleEl as HTMLElement | null)?.offsetWidth ?? singleBox.w / zoom)} × ${Math.round((singleEl as HTMLElement | null)?.offsetHeight ?? singleBox.h / zoom)}`}
+                : singleEl
+                  ? `${Math.round(boxOf(singleEl).width)} × ${Math.round(boxOf(singleEl).height)}`
+                  : `${Math.round(singleBox.w / zoom)} × ${Math.round(singleBox.h / zoom)}`}
             </span>
           </div>
         )}
@@ -1075,6 +1234,7 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
         )}
         {fx.ghost && <div className="dz-ghost" style={rectStyle(fx.ghost)} />}
         {fx.marquee && <div className="dz-marquee" style={rectStyle(fx.marquee)} />}
+        {fx.draw && <DrawPreview draw={fx.draw} />}
         {fx.guides.map((g, i) => (
           <div
             key={i}
@@ -1088,6 +1248,37 @@ export function Canvas({ sessionId }: { sessionId: string | null }): React.JSX.E
         ))}
       </div>
     </div>
+  )
+}
+
+/** The shape under the pointer while it is being drawn, with its size beside it. */
+function DrawPreview({ draw }: { draw: NonNullable<Fx['draw']> }): React.JSX.Element {
+  const line = draw.tool === 'line' || draw.tool === 'arrow'
+  const { rect } = draw
+  return (
+    <>
+      {line ? (
+        <svg className="dz-draw-line" width="100%" height="100%">
+          <defs>
+            <marker id="dz-draw-head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M1 1 L9 5 L1 9" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </marker>
+          </defs>
+          <line
+            x1={draw.from.x}
+            y1={draw.from.y}
+            x2={draw.to.x}
+            y2={draw.to.y}
+            markerEnd={draw.tool === 'arrow' ? 'url(#dz-draw-head)' : undefined}
+          />
+        </svg>
+      ) : (
+        <div className={`dz-draw is-${draw.tool}`} style={rectStyle(rect)} />
+      )}
+      <span className="dz-draw-size" style={{ left: rect.x + rect.width / 2, top: rect.y + rect.height + 8 }}>
+        {draw.size}
+      </span>
+    </>
   )
 }
 

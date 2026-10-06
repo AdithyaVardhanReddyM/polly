@@ -143,13 +143,19 @@ export interface ModelOption {
   output_price: number | null
   is_default: boolean
   is_default_fast: boolean
+  /** The reasoning-effort levels the user can pick, lowest first; empty when the model has none. */
+  efforts: Effort[]
 }
 
 export interface ModelList {
   models: ModelOption[]
   default: string
   default_fast: string
+  default_effort: Effort
 }
+
+/** How hard a thinking model thinks before it acts. */
+export type Effort = 'low' | 'medium' | 'high'
 
 // ---------- coder: projects and sessions ----------
 
@@ -221,6 +227,8 @@ export interface Session {
   members: string[] | null
   title: string
   model: string
+  /** null runs at the default effort (high). */
+  reasoning_effort: Effort | null
   mode: PermissionMode
   created_at: number
   updated_at: number
@@ -556,6 +564,7 @@ export type CoderEvent =
         replayed?: boolean
       })
   | (EventBase & { type: 'compaction'; node: string })
+  | (EventBase & { type: 'notice'; tone: 'info' | 'warn' | 'error'; text: string })
   | (EventBase & { type: 'sources.added'; sources: Source[] })
   | (EventBase & { type: 'report'; report: ChangeReport })
   | (EventBase & { type: 'scorecard'; scorecard: Scorecard })

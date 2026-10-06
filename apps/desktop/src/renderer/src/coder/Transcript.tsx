@@ -155,6 +155,7 @@ export function TranscriptView({
   const running = run === 'running'
   const seconds = useRunClock(running)
   const lastBlock = blocks[blocks.length - 1]
+  const lastUser = blocks.map((b) => b.kind).lastIndexOf('user')
   const crew = crewOf(items)
   const busy = running && isBusy(crew)
   const agents = useRoster((s) => s.agents)
@@ -184,7 +185,8 @@ export function TranscriptView({
                     key={b.id}
                     text={b.item.text}
                     streaming={b.item.streaming}
-                    actions={b.last && !b.item.streaming}
+                    // Copy goes on a turn's final reply once the turn is over.
+                    actions={b.last && !b.item.streaming && !(running && i > lastUser)}
                   />
                 ]
               case 'steps':
@@ -201,7 +203,8 @@ export function TranscriptView({
           {busy ? (
             <CrewBoard lead={agent} crew={crew} seconds={seconds} />
           ) : (
-            running && (
+            running &&
+            !thinkingNow(items) && (
               <Working seconds={seconds} label={activity(items, waitingOn)} agent={agent} />
             )
           )}
@@ -380,8 +383,14 @@ function useRunClock(running: boolean): number {
 
 const capitalise = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 
+/** The lead is mid-thought with nothing said yet: its thinking line is the status. */
+function thinkingNow(items: TranscriptItem[]): boolean {
+  const last = items[items.length - 1]
+  return last?.kind === 'assistant' && last.streaming && !last.text && !!last.reasoning.trim()
+}
+
 /** What the agent is doing right now, in a few words. */
-function activity(items: TranscriptItem[], nameOf: (ref: string) => string): string {
+export function activity(items: TranscriptItem[], nameOf: (ref: string) => string): string {
   const last = items[items.length - 1]
   if (!last || last.kind === 'user') return 'Thinking'
   if (last.kind === 'assistant') return last.streaming ? (last.text ? 'Writing' : 'Thinking') : 'Working'
@@ -624,116 +633,174 @@ function MateMessage({ item, lead }: { item: Subagent; lead?: AvatarAgent }): Re
 
 // ---------- steps ----------
 
-/** "Read 3 files, ran 2 commands": what a folded run of steps did. */
+/** "Ran 2 commands, read 3 files, used a tool": what a run of steps did. */
 function summarize(steps: Step[]): string {
-  const counts = new Map<string, number>()
-  const add = (k: string): void => {
-    counts.set(k, (counts.get(k) ?? 0) + 1)
-  }
+  const tools: ToolItem[] = []
+  let tasks = 0
   for (const s of steps) {
-    if (s.kind === 'subagent') add('task')
-    else if (s.kind === 'tool') add(s.tool.name)
+    if (s.kind === 'subagent') tasks++
+    // Only what happened: a step turned down, or still waiting on the user, is shown beside it.
+    else if (s.kind === 'tool' && !['rejected', 'waiting'].includes(s.tool.status)) tools.push(s.tool)
   }
-  const n = (name: string | string[]): number =>
-    (Array.isArray(name) ? name : [name]).reduce((sum, k) => sum + (counts.get(k) ?? 0), 0)
-  const plural = (count: number, one: string, many: string): string =>
-    `${count} ${count === 1 ? one : many}`
+  const of = (names: string[]): ToolItem[] => tools.filter((t) => names.includes(t.name))
+  const n = (...names: string[]): number => of(names).length
+  // Frames drawn or reviewed count once each, however many calls it took.
+  const frames = (...names: string[]): number =>
+    new Set(of(names).map((t) => String(t.args?.artboard_id ?? ''))).size
+  const count = (k: number, one: string, many: string): string => (k === 1 ? one : `${k} ${many}`)
+  const times = (k: number): string => (k === 1 ? '' : ` ${k} times`)
   const phrases: string[] = []
-  const read = n(['read_file', 'github_file'])
-  const explored = n(['ls', 'glob'])
-  const searched = n('grep')
-  const edited = n(['edit_file', 'write_file', 'delete'])
-  const ran = n('execute')
-  const web = n(['web_search', 'research_search'])
-  const pages = n('web_extract')
-  const git = n(['git_status', 'git_diff', 'git_branch', 'git_commit'])
-  const tasks = n('task')
-  const pr = n(['github_pr_overview', 'github_pr_files', 'github_pr_checks'])
-  if (read) phrases.push(`read ${plural(read, 'file', 'files')}`)
-  if (explored) phrases.push(`listed ${plural(explored, 'folder', 'folders')}`)
-  if (searched) phrases.push(`searched the code ${searched === 1 ? 'once' : `${searched} times`}`)
-  if (edited) phrases.push(`edited ${plural(edited, 'file', 'files')}`)
-  if (ran) phrases.push(`ran ${plural(ran, 'command', 'commands')}`)
-  if (web) phrases.push(`searched the web ${web === 1 ? 'once' : `${web} times`}`)
-  if (pages) phrases.push(`read ${plural(pages, 'page', 'pages')}`)
-  if (pr) phrases.push(`inspected the PR ${pr === 1 ? 'once' : `${pr} times`}`)
-  if (git) phrases.push(plural(git, 'git step', 'git steps'))
-  if (tasks) phrases.push(`delegated ${plural(tasks, 'task', 'tasks')}`)
-  const known =
-    read + explored + searched + edited + ran + web + pages + git + tasks + pr + n('write_todos')
-  const other = [...counts.values()].reduce((a, b) => a + b, 0) - known
-  if (n('write_todos')) phrases.push('updated the plan')
-  if (other > 0) phrases.push(plural(other, 'other step', 'other steps'))
-  const text = phrases.join(', ')
+  const said = (k: number, phrase: string): void => {
+    if (k) phrases.push(phrase)
+  }
+  const known = new Set<string>()
+  const use = (...names: string[]): number => {
+    names.forEach((x) => known.add(x))
+    return n(...names)
+  }
+
+  const ran = use('execute')
+  said(ran, `ran ${count(ran, 'a command', 'commands')}`)
+  const read = use('read_file', 'github_file')
+  said(read, `read ${count(read, 'a file', 'files')}`)
+  const edited = use('edit_file', 'write_file', 'delete')
+  said(edited, `edited ${count(edited, 'a file', 'files')}`)
+  const searched = use('grep', 'glob')
+  said(searched, `searched the code${times(searched)}`)
+  const listed = use('ls')
+  said(listed, `listed ${count(listed, 'a folder', 'folders')}`)
+  const web = use('web_search', 'research_search')
+  said(web, `searched the web${times(web)}`)
+  const pages = use('web_extract')
+  said(pages, `read ${count(pages, 'a page', 'pages')}`)
+  const pr = use('github_pr_overview', 'github_pr_files', 'github_pr_checks')
+  said(pr, 'looked at the pull request')
+  const git = use('git_status', 'git_diff', 'git_branch', 'git_commit')
+  said(git, `ran ${count(git, 'a git step', 'git steps')}`)
+  const created = use('create_artboard')
+  said(created, `created ${count(created, 'a frame', 'frames')}`)
+  const drew = use('write_html') && frames('write_html')
+  said(drew, `drew ${count(drew, 'a frame', 'frames')}`)
+  said(use('update_nodes'), 'refined the design')
+  said(use('update_artboard'), 'resized a frame')
+  said(use('delete_nodes', 'delete_artboard'), 'removed layers')
+  said(use('get_design', 'get_html'), 'looked at the canvas')
+  const reviewed = use('review_design') && frames('review_design')
+  said(reviewed, `reviewed ${count(reviewed, 'a frame', 'frames')}`)
+  said(use('set_fonts'), 'loaded fonts')
+  said(use('write_todos'), 'updated the plan')
+  said(use('remember', 'forget'), 'updated its memory')
+  said(tasks, `delegated ${count(tasks, 'a task', 'tasks')}`)
+  const other = tools.filter((t) => !known.has(t.name)).length
+  said(other, `used ${count(other, 'a tool', 'tools')}`)
+
+  const text = phrases.join(', ') || 'Worked'
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-const FOLD_AFTER = 3
-
+/**
+ * A run of steps between two messages, folded to the one line that says what
+ * it did ("Ran 2 commands, read a file"). It opens on a click, and by itself
+ * only when a step is waiting on the user. A thought still under way sits
+ * outside the fold, so the live status stays in view.
+ */
 function StepGroup({ steps, live }: { steps: Step[]; live: boolean }): React.JSX.Element {
-  const actions = steps.filter((s) => s.kind !== 'thinking')
+  const [open, setOpen] = useState(false)
+  const tail = steps[steps.length - 1]
+  const thinkingLast = live && tail?.kind === 'thinking' && tail.live
+  const folded = thinkingLast ? steps.slice(0, -1) : steps
+  const actions = folded.filter((s) => s.kind !== 'thinking')
   const problems = actions.filter(
     (s) =>
-      (s.kind === 'tool' && ['error', 'blocked', 'waiting'].includes(s.tool.status)) ||
+      (s.kind === 'tool' && ['error', 'blocked'].includes(s.tool.status)) ||
       (s.kind === 'subagent' && s.item.status === 'error')
   ).length
-  const foldable = !live && actions.length > FOLD_AFTER
-  const [open, setOpen] = useState(!foldable)
-  // Fold a long run of steps once the agent moves on.
-  const wasLive = useRef(live)
-  useEffect(() => {
-    if (wasLive.current && !live && actions.length > FOLD_AFTER) setOpen(false)
-    wasLive.current = live
-  }, [live, actions.length])
+  const rejected = actions.filter((s) => s.kind === 'tool' && s.tool.status === 'rejected').length
+  const needsYou = actions.some((s) => s.kind === 'tool' && s.tool.status === 'waiting')
+  const expanded = open || needsYou
 
-  if (foldable && !open) {
-    return (
-      <div className="steps">
-        <button className="step-summary" onClick={() => setOpen(true)}>
-          <span>{summarize(steps)}</span>
-          {problems > 0 && <span className="step-problems">{problems} failed</span>}
-          <ChevronRight className="chev" />
-        </button>
-      </div>
+  const render = (s: Step): React.JSX.Element =>
+    s.kind === 'thinking' ? (
+      <Thinking key={s.id} text={s.text} live={s.live} />
+    ) : s.kind === 'tool' ? (
+      <ToolCard key={s.id} tool={s.tool} />
+    ) : (
+      <SubagentStep key={s.id} item={s.item} />
     )
-  }
+
+  // Only thinking so far: its own line is the summary.
+  if (actions.length === 0) return <div className="steps">{steps.map(render)}</div>
+
   return (
     <div className="steps">
-      {foldable && (
-        <button className="step-summary is-open" onClick={() => setOpen(false)}>
-          <span>{summarize(steps)}</span>
-          <ChevronRight className="chev is-open" />
-        </button>
-      )}
-      {steps.map((s) =>
-        s.kind === 'thinking' ? (
-          <Thinking key={s.id} text={s.text} live={s.live} />
-        ) : s.kind === 'tool' ? (
-          <ToolCard key={s.id} tool={s.tool} />
-        ) : (
-          <SubagentStep key={s.id} item={s.item} />
-        )
+      <button
+        className={expanded ? 'step-summary is-open' : 'step-summary'}
+        onClick={() => setOpen(!expanded)}
+        aria-expanded={expanded}
+      >
+        <span className={live && !thinkingLast ? 'shimmer' : undefined}>{summarize(folded)}</span>
+        {problems > 0 && <span className="step-problems">{problems} failed</span>}
+        {rejected > 0 && <span className="step-rejected">{rejected} rejected</span>}
+        <ChevronRight className={expanded ? 'chev is-open' : 'chev'} />
+      </button>
+      {expanded && <div className="steps-body">{folded.map(render)}</div>}
+      {thinkingLast && render(tail)}
+    </div>
+  )
+}
+
+/**
+ * The model's private reasoning: a quiet line with how long it has been
+ * thinking, that opens to the text. The reasoning itself is not streamed into
+ * the line: it is a draft, and the agent says what it is doing in its replies.
+ */
+function Thinking({ text, live }: { text: string; live: boolean }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
+  // Timed from when this turn's thinking appeared; a reloaded transcript has no timing.
+  const started = useRef<number | null>(live ? Date.now() : null)
+  const [took, setTook] = useState<number | null>(null)
+  const now = useTicker(live)
+  useEffect(() => {
+    if (!live && started.current !== null && took === null)
+      setTook(Math.max(1, Math.round((Date.now() - started.current) / 1000)))
+  }, [live, took])
+  // While it is open and still thinking, follow the newest line.
+  useLayoutEffect(() => {
+    if (open && live && body.current) body.current.scrollTop = body.current.scrollHeight
+  }, [open, live, text])
+
+  const elapsed = live && started.current !== null ? Math.floor((now - started.current) / 1000) : took
+  return (
+    <div className={`step is-thinking${open ? ' is-open' : ''}`}>
+      <button className="step-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="step-icon">
+          <Lightbulb />
+        </span>
+        <span className={live ? 'step-verb shimmer' : 'step-verb'}>
+          {live ? 'Thinking' : took ? `Thought for ${formatElapsed(took)}` : 'Thought'}
+        </span>
+        {live && elapsed !== null && elapsed >= 1 && <span className="step-time">{formatElapsed(elapsed)}</span>}
+        <ChevronRight className={open ? 'chev is-open' : 'chev'} />
+      </button>
+      {open && (
+        <div className="step-body thinking-text" ref={body}>
+          {text.trim()}
+        </div>
       )}
     </div>
   )
 }
 
-function Thinking({ text, live }: { text: string; live: boolean }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
-  const preview = text.trim().split('\n').filter(Boolean).slice(-2).join(' ')
-  return (
-    <div className={`step is-thinking${open ? ' is-open' : ''}`}>
-      <button className="step-head" onClick={() => setOpen(!open)}>
-        <span className="step-icon">
-          <Lightbulb />
-        </span>
-        <span className={live ? 'step-verb shimmer' : 'step-verb'}>{live ? 'Thinking' : 'Thought'}</span>
-        {!open && <span className="step-target is-prose">{preview}</span>}
-        <ChevronRight className={open ? 'chev is-open' : 'chev'} />
-      </button>
-      {open && <div className="step-body thinking-text">{text.trim()}</div>}
-    </div>
-  )
+/** The time now, ticking once a second while `on`. */
+function useTicker(on: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!on) return
+    const t = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [on])
+  return now
 }
 
 const STATUS_LABEL: Record<ToolItem['status'], string> = {

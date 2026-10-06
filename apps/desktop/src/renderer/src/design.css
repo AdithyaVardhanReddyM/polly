@@ -5,7 +5,8 @@
 
 .design {
   --head-h: 48px;
-  --canvas-bg: #f1f1f4;
+  --canvas-bg: #f4f4f6;
+  --canvas-dot: #c2c2cb;
   --dz-accent: #7c5cd6;
   --dz-guide: #ff3d9a;
   --dz-field: var(--sidebar);
@@ -16,7 +17,8 @@
 }
 
 :root[data-theme='dark'] .design {
-  --canvas-bg: #0c0c0f;
+  --canvas-bg: #101013;
+  --canvas-dot: #2c2c33;
   --dz-accent: #a08ce4;
 }
 
@@ -34,27 +36,25 @@
   position: relative;
 }
 
-.design-start {
-  padding: 24px 20px;
+/* the model card beside the picker needs more room than a narrow chat has */
+.design-chat {
+  container-type: inline-size;
 }
 
-.design-start h2 {
-  font-size: 24px;
+@container (max-width: 640px) {
+  .design-chat .popover-panel .model-card {
+    display: none;
+  }
 }
 
-.design-start .starter-grid {
-  grid-template-columns: minmax(0, 1fr);
-  width: 100%;
-  max-width: 340px;
+/* the chat column is narrow: the centred prompt keeps tighter margins */
+.design-chat.is-empty .coder-composer,
+.design-chat .hero {
+  padding: 0 20px;
 }
 
-.design-start .starter-grid .starter {
-  min-height: 0;
-}
-
-.welcome-mark.is-design {
-  background: var(--brand-tint);
-  color: var(--brand-ink);
+.design-chat .hero h2 {
+  font-size: 22px;
 }
 
 body:has(.splitter.is-dragging) .design {
@@ -133,16 +133,11 @@ body:has(.splitter.is-dragging) .design {
 /* ---------- stage ---------- */
 
 .design-stage {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  background: var(--canvas-bg);
-}
-
-.design-canvas {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
+  overflow: hidden;
+  background: var(--canvas-bg);
 }
 
 .dz-canvas {
@@ -184,6 +179,7 @@ body:has(.splitter.is-dragging) .design {
   padding: 0 2px;
   overflow: hidden;
   font-size: 11.5px;
+  font-weight: 500;
   line-height: 18px;
   color: var(--muted);
   white-space: nowrap;
@@ -304,6 +300,45 @@ body:has(.splitter.is-dragging) .design {
 .dz-marquee {
   border: 1px solid var(--dz-accent);
   background: color-mix(in srgb, var(--dz-accent) 10%, transparent);
+  pointer-events: none;
+}
+
+/* what is being drawn */
+.dz-draw {
+  border: 1.5px solid var(--dz-accent);
+  background: color-mix(in srgb, #d9d9d9 70%, transparent);
+  pointer-events: none;
+}
+
+.dz-draw.is-frame {
+  border-width: 1px;
+  background: color-mix(in srgb, #ffffff 80%, transparent);
+}
+
+.dz-draw.is-ellipse {
+  border-radius: 50%;
+}
+
+.dz-overlay > .dz-draw-line {
+  inset: 0;
+  overflow: visible;
+  color: var(--dz-accent);
+  stroke: var(--dz-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.dz-draw-size {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--dz-accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  white-space: nowrap;
+  transform: translateX(-50%);
   pointer-events: none;
 }
 
@@ -461,17 +496,28 @@ body:has(.splitter.is-dragging) .design {
 .dz-toolbar {
   position: absolute;
   left: 50%;
-  bottom: 16px;
-  z-index: 5;
+  bottom: 14px;
+  z-index: 6;
   display: flex;
   align-items: center;
-  gap: 2px;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow-md);
   transform: translateX(-50%);
+}
+
+.dz-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.dz-tool-group + .dz-tool-group {
+  margin-left: 5px;
+  padding-left: 5px;
+  border-left: 1px solid var(--line);
 }
 
 .dz-toolbar button,
@@ -494,7 +540,8 @@ body:has(.splitter.is-dragging) .design {
   color: var(--ink);
 }
 
-.dz-toolbar button.is-active {
+.dz-toolbar button.is-active,
+.dz-toolbar button.is-active:hover {
   background: var(--dz-accent);
   color: #fff;
 }
@@ -510,118 +557,133 @@ body:has(.splitter.is-dragging) .design {
   height: 16px;
 }
 
-.dz-toolbar i {
-  width: 1px;
-  height: 18px;
-  margin: 0 4px;
-  background: var(--line);
-}
-
 .dz-toolbar .dz-zoom {
   width: 50px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
-.dz-corner {
+.dz-chip.is-layers {
   position: absolute;
-  top: 10px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dz-corner.is-left {
   left: 10px;
-}
-
-.dz-corner.is-right {
-  right: 10px;
-}
-
-.dz-chip {
+  top: 10px;
+  z-index: 6;
+  width: auto;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 8px;
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+  font-size: 12.5px;
+  font-weight: 500;
 }
 
-.dz-chip.is-active {
-  color: var(--dz-accent);
+.dz-chip.is-layers svg {
+  width: 14px;
+  height: 14px;
 }
 
-.dz-save {
+/* what the Designer is doing, over the canvas while it works */
+.dz-status {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 50%;
+  height: 32px;
+  padding: 0 14px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: dz-panel-in 0.16s ease-out both;
+}
+
+.dz-status span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-title .dz-save {
   font-size: 11.5px;
   color: var(--faint);
 }
 
-.dz-save.is-error {
+.chat-title .dz-save.is-error {
   color: var(--down);
 }
 
-.dz-empty {
+/* panels float over the canvas, clear of the toolbar along the bottom */
+.dz-panel {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  top: 8px;
+  bottom: 62px;
+  z-index: 5;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  max-width: 320px;
-  text-align: center;
-  color: var(--muted);
-  transform: translate(-50%, -50%);
+  max-height: calc(100% - 70px);
+  min-height: 0;
+  height: fit-content;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  animation: dz-panel-in 0.16s ease-out both;
 }
 
-.dz-empty > svg {
-  width: 28px;
-  height: 28px;
-  color: var(--faint);
+.dz-panel.is-left {
+  left: 8px;
+  width: 240px;
+  height: auto;
 }
 
-.dz-empty b {
-  font-size: 15px;
-  color: var(--ink);
+.dz-panel.is-right {
+  right: 8px;
+  width: 256px;
+  overflow-y: auto;
 }
 
-.dz-empty .btn {
-  margin-top: 8px;
+@keyframes dz-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dz-panel {
+    animation: none;
+  }
 }
 
 /* ---------- side panels ---------- */
-
-.dz-left,
-.dz-right {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--surface);
-  font-size: 12px;
-}
-
-.dz-left {
-  width: 236px;
-  border-right: 1px solid var(--line);
-}
-
-.dz-right {
-  width: 264px;
-  border-left: 1px solid var(--line);
-  overflow-y: auto;
-}
 
 .dz-tabs {
   flex: none;
   display: flex;
   gap: 2px;
-  height: var(--head-h);
-  padding: 0 8px;
+  height: 44px;
+  padding: 0 6px 0 8px;
   align-items: center;
   border-bottom: 1px solid var(--line);
 }
 
-.dz-tabs button {
+.dz-tabs-spacer {
+  flex: 1;
+}
+
+.dz-tabs button:not(.dz-mini) {
   height: 28px;
   padding: 0 10px;
   border: none;
@@ -820,41 +882,54 @@ body:has(.splitter.is-dragging) .design {
 }
 
 .dz-insp-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   flex: none;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  height: var(--head-h);
-  padding: 15px 12px 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-height: 52px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .dz-insp-head b {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .dz-insp-head span {
-  flex: none;
+  overflow: hidden;
   color: var(--faint);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dz-align {
   display: flex;
   justify-content: space-between;
-  padding: 6px 8px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--line);
 }
 
 .dz-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px 12px;
+  gap: 8px;
+  padding: 12px 14px 14px;
   border-bottom: 1px solid var(--line);
+}
+
+.dz-section:last-child {
+  border-bottom: none;
 }
 
 .dz-section > header {
@@ -866,8 +941,13 @@ body:has(.splitter.is-dragging) .design {
 .dz-section h4 {
   flex: 1;
   margin: 0;
+  color: var(--ink);
   font-size: 12px;
   font-weight: 600;
+}
+
+.dz-row-gap {
+  flex: 1 1 0;
 }
 
 .dz-mini,
@@ -1357,20 +1437,21 @@ body:has(.splitter.is-dragging) .design {
 .dz-presets {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  margin: 0 -6px;
 }
 
 .dz-presets button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 28px;
+  height: 30px;
   padding: 0 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: 7px;
   background: none;
   color: var(--ink);
-  font-size: 12px;
+  font-size: 12.5px;
   cursor: pointer;
 }
 
@@ -1380,30 +1461,7 @@ body:has(.splitter.is-dragging) .design {
 
 .dz-presets em {
   color: var(--faint);
+  font-size: 11.5px;
   font-style: normal;
   font-variant-numeric: tabular-nums;
-}
-
-.dz-keys {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin: 0;
-}
-
-.dz-keys div {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.dz-keys dt {
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-.dz-keys dd {
-  margin: 0;
-  color: var(--muted);
 }

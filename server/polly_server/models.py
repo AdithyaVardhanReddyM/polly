@@ -88,6 +88,7 @@ def chat_model(
     tier: Literal["default", "fast", "strong"] = "default",
     *,
     model: str | None = None,
+    reasoning_effort: model_registry.Effort | None = None,
     **kwargs: Any,
 ) -> BaseChatModel:
     """A LangChain chat model pointed at Token Factory.
@@ -109,8 +110,14 @@ def chat_model(
         # Deep Agents reads this to decide when to compact the conversation.
         "profile": {"max_input_tokens": spec.context_window},
     }
-    if spec.extra_body:
-        options["extra_body"] = spec.extra_body
+    extra = dict(spec.extra_body)
+    # How long a thinking model deliberates before it answers: the session's
+    # choice, high by default, sent the way this model understands it.
+    level = model_registry.effort_for(spec, reasoning_effort)
+    if level and spec.efforts[level]:
+        extra["reasoning_effort"] = spec.efforts[level]
+    if extra:
+        options["extra_body"] = extra
     options.update(kwargs)
 
     cls = _nebius_chat_class()

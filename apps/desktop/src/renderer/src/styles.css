@@ -439,21 +439,6 @@ code {
 }
 
 /* the "online" dot of a messaging app: this agent is at work right now */
-.buddy-live {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--ok);
-  border: 2px solid var(--sidebar);
-}
-
-.buddy.is-active .buddy-live {
-  border-color: var(--selected);
-}
-
 .buddy.is-active .buddy-sub {
   color: color-mix(in srgb, var(--brand-ink) 75%, var(--muted));
 }

@@ -49,6 +49,16 @@ const appTool = (slug: unknown): string => {
   return `${app.charAt(0).toUpperCase()}${app.slice(1)}: ${rest.join(' ')}`
 }
 
+/**
+ * Names of the Designer's frames by id, kept current by the canvas, so a step
+ * reads "Draw Home screen" rather than an id.
+ */
+export const frameNames = new Map<string, string>()
+const frame = (id: unknown): string => {
+  const key = typeof id === 'string' ? id : ''
+  return frameNames.get(key) ?? key
+}
+
 export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta {
   const path = s(args.file_path ?? args.path).replace(/^\//, '') || '.'
   switch (name) {
@@ -133,7 +143,7 @@ export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta 
     case 'git_commit':
       return { icon: <GitCommitHorizontal />, verb: 'Commit', target: s(args.message).split('\n')[0] }
     case 'get_design':
-      return { icon: <Eye />, verb: 'Look at the canvas', target: s(args.artboard_id) }
+      return { icon: <Eye />, verb: 'Look at the canvas', target: frame(args.artboard_id) }
     case 'get_html':
       return { icon: <Eye />, verb: 'Read', target: s(args.node_id ?? args.artboard_id) }
     case 'create_artboard':
@@ -143,14 +153,14 @@ export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta 
         target: `${s(args.name)}  ${s(args.width)}×${s(args.height)}`
       }
     case 'update_artboard':
-      return { icon: <Frame />, verb: 'Change frame', target: s(args.name ?? args.artboard_id) }
+      return { icon: <Frame />, verb: 'Change frame', target: s(args.name) || frame(args.artboard_id) }
     case 'delete_artboard':
-      return { icon: <Trash2 />, verb: 'Delete frame', target: s(args.artboard_id) }
+      return { icon: <Trash2 />, verb: 'Delete frame', target: frame(args.artboard_id) }
     case 'write_html':
       return {
         icon: <PenTool />,
-        verb: args.target_id ? 'Draw part' : 'Draw',
-        target: s(args.target_id ?? args.artboard_id)
+        verb: args.target_id ? 'Draw part of' : 'Draw',
+        target: frame(args.artboard_id)
       }
     case 'update_nodes':
       return {
@@ -171,7 +181,7 @@ export function toolMeta(name: string, args: Record<string, unknown>): ToolMeta 
         target: Array.isArray(args.families) ? args.families.map(s).join(', ') : ''
       }
     case 'review_design':
-      return { icon: <ScanEye />, verb: 'Review', target: s(args.brief) }
+      return { icon: <ScanEye />, verb: 'Review', target: frame(args.artboard_id) || s(args.brief) }
     case 'task':
       return { icon: <Bot />, verb: 'Delegate', target: s(args.subagent_type) }
     case 'remember':

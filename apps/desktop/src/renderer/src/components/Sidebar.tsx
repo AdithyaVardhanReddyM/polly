@@ -235,7 +235,6 @@ export function Sidebar({
       >
         <span className="buddy-avatar">
           <GroupAvatar members={members} size={44} />
-          {state && <span className="buddy-live" />}
         </span>
         <span className="buddy-body">
           <span className="buddy-line">
@@ -281,7 +280,6 @@ export function Sidebar({
       >
         <span className="buddy-avatar">
           <AgentAvatar agent={a} size={44} bare motion={state ? 'medium' : 'slow'} />
-          {state && <span className="buddy-live" />}
         </span>
         <span className="buddy-body">
           <span className="buddy-line">

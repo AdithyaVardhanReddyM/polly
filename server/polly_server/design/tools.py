@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from polly_server import artifacts
+from polly_server import artifacts, sessions
 from polly_server.config import settings
 from polly_server.design import document
 from polly_server.design.document import Artboard, DesignDoc, Position
@@ -20,15 +20,24 @@ from polly_server.design.prompt import CRITIC_PROMPT
 
 SCREENSHOT_TIMEOUT = 25  # seconds to wait for the app to send a picture
 
-# Screenshots the app owes a running `review_design`, by request id.
-_screenshots: dict[str, asyncio.Future[str]] = {}
+# Screenshots the app owes a running `review_design`, by request id, with the
+# event loop the review is waiting on.
+_screenshots: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Future[str]]] = {}
 
 
 def deliver_screenshot(request_id: str, data_url: str) -> bool:
-    future = _screenshots.get(request_id)
-    if future is None or future.done():
+    """Hand the app's picture to the review waiting for it. Called from the
+    API's worker threads, so the future is resolved on its own loop."""
+    waiting = _screenshots.get(request_id)
+    if waiting is None or waiting[1].done():
         return False
-    future.set_result(data_url)
+    loop, future = waiting
+
+    def resolve() -> None:
+        if not future.done():
+            future.set_result(data_url)
+
+    loop.call_soon_threadsafe(resolve)
     return True
 
 
@@ -129,22 +138,24 @@ def create_artboard(
     """Add an empty artboard to the canvas, placed next to the others. Create
     every artboard you plan to design first, then fill them with write_html."""
     session_id = artifacts.session_id_of(runtime)
-    doc = document.load(session_id)
-    width = max(16, min(int(width), 8000))
-    height = max(16, min(int(height), 12000))
-    x, y = document.place_next(doc, width)
-    board = Artboard(
-        id=document.new_id("a"),
-        name=name.strip() or "Artboard",
-        x=x,
-        y=y,
-        width=width,
-        height=height,
-        background=background,
-    )
-    doc.artboards.append(board)
-    _changed(runtime, session_id, doc, board, "create")
-    return f"Created artboard {board.id} ({width}x{height}). Fill it with write_html."
+    with document.editing(session_id) as doc:
+        width = max(16, min(int(width), 8000))
+        height = max(16, min(int(height), 12000))
+        x, y = document.place_next(doc, width)
+        board = Artboard(
+            id=document.new_id("a"),
+            name=name.strip() or "Artboard",
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            background=background,
+        )
+        # Under the user's loose layers, which stay on top of every frame.
+        loose = [i for i, b in enumerate(doc.artboards) if b.id == document.CANVAS_ID]
+        doc.artboards.insert(loose[0] if loose else len(doc.artboards), board)
+        _changed(runtime, session_id, doc, board, "create")
+        return f"Created artboard {board.id} ({width}x{height}). Fill it with write_html."
 
 
 @tool
@@ -158,34 +169,34 @@ def update_artboard(
 ) -> str:
     """Rename or resize an artboard, or change its background colour."""
     session_id = artifacts.session_id_of(runtime)
-    doc = document.load(session_id)
-    try:
-        board = doc.artboard(artboard_id)
-    except LookupError as why:
-        return f"Error: {why}"
-    if name:
-        board.name = name.strip()
-    if width:
-        board.width = max(16, min(int(width), 8000))
-    if height:
-        board.height = max(16, min(int(height), 12000))
-    if background:
-        board.background = background
-    _changed(runtime, session_id, doc, board, "edit")
-    return f"Updated {board.id}: {board.name}, {round(board.width)}x{round(board.height)}."
+    with document.editing(session_id) as doc:
+        try:
+            board = doc.artboard(artboard_id)
+        except LookupError as why:
+            return f"Error: {why}"
+        if name:
+            board.name = name.strip()
+        if width:
+            board.width = max(16, min(int(width), 8000))
+        if height:
+            board.height = max(16, min(int(height), 12000))
+        if background:
+            board.background = background
+        _changed(runtime, session_id, doc, board, "edit")
+        return f"Updated {board.id}: {board.name}, {round(board.width)}x{round(board.height)}."
 
 
 @tool
 def delete_artboard(runtime: ToolRuntime, artboard_id: str) -> str:
     """Remove an artboard and everything on it."""
     session_id = artifacts.session_id_of(runtime)
-    doc = document.load(session_id)
-    if not any(b.id == artboard_id for b in doc.artboards):
-        return f"Error: no artboard {artboard_id!r}"
-    doc.artboards = [b for b in doc.artboards if b.id != artboard_id]
-    document.save(session_id, doc)
-    _emit(runtime, {"type": "design.removed", "artboard_id": artboard_id, "rev": doc.rev})
-    return f"Deleted {artboard_id}."
+    with document.editing(session_id) as doc:
+        if not any(b.id == artboard_id for b in doc.artboards):
+            return f"Error: no artboard {artboard_id!r}"
+        doc.artboards = [b for b in doc.artboards if b.id != artboard_id]
+        document.save(session_id, doc)
+        _emit(runtime, {"type": "design.removed", "artboard_id": artboard_id, "rev": doc.rev})
+        return f"Deleted {artboard_id}."
 
 
 @tool
@@ -206,17 +217,17 @@ def write_html(
     artboard; with a target it rewrites or adds to one part and leaves the
     rest alone. Every element gets a data-id you can use afterwards."""
     session_id = artifacts.session_id_of(runtime)
-    doc = document.load(session_id)
-    try:
-        board = doc.artboard(artboard_id)
-        was_empty = not board.html.strip()
-        top = document.insert(board, html, target_id, position)
-    except LookupError as why:
-        return f"Error: {why}"
-    whole = target_id is None and position in ("replace", "replace_children")
-    _changed(runtime, session_id, doc, board, "write" if whole or was_empty else "edit", top)
-    tree = "\n".join(document.outline(board, node, limit=60) for node in top[:8])
-    return f"Written to {board.id}. New nodes:\n{tree}"
+    with document.editing(session_id) as doc:
+        try:
+            board = doc.artboard(artboard_id)
+            was_empty = not board.html.strip()
+            top = document.insert(board, html, target_id, position)
+        except LookupError as why:
+            return f"Error: {why}"
+        whole = target_id is None and position in ("replace", "replace_children")
+        _changed(runtime, session_id, doc, board, "write" if whole or was_empty else "edit", top)
+        tree = "\n".join(document.outline(board, node, limit=60) for node in top[:8])
+        return f"Written to {board.id}. New nodes:\n{tree}"
 
 
 @tool
@@ -228,33 +239,33 @@ def update_nodes(
     """Change existing nodes in place: classes, inline style, text or
     attributes. Cheaper and safer than rewriting HTML for small edits."""
     session_id = artifacts.session_id_of(runtime)
-    doc = document.load(session_id)
-    try:
-        board = doc.artboard(artboard_id)
-    except LookupError as why:
-        return f"Error: {why}"
-    done: list[str] = []
-    problems: list[str] = []
-    for item in updates:
-        change = item if isinstance(item, NodeUpdate) else NodeUpdate.model_validate(item)
+    with document.editing(session_id) as doc:
         try:
-            document.update(
-                board,
-                change.node_id,
-                classes=change.classes,
-                style=change.style,
-                text=change.text,
-                attributes=change.attributes,
-            )
-            done.append(change.node_id)
-        except (LookupError, ValueError) as why:
-            problems.append(str(why))
-    if done:
-        _changed(runtime, session_id, doc, board, "edit", done)
-    report = f"Updated {len(done)} node(s) on {board.id}."
-    if problems:
-        report += " Problems: " + "; ".join(problems)
-    return report
+            board = doc.artboard(artboard_id)
+        except LookupError as why:
+            return f"Error: {why}"
+        done: list[str] = []
+        problems: list[str] = []
+        for item in updates:
+            change = item if isinstance(item, NodeUpdate) else NodeUpdate.model_validate(item)
+            try:
+                document.update(
+                    board,
+                    change.node_id,
+                    classes=change.classes,
+                    style=change.style,
+                    text=change.text,
+                    attributes=change.attributes,
+                )
+                done.append(change.node_id)
+            except (LookupError, ValueError) as why:
+                problems.append(str(why))
+        if done:
+            _changed(runtime, session_id, doc, board, "edit", done)
+        report = f"Updated {len(done)} node(s) on {board.id}."
+        if problems:
+            report += " Problems: " + "; ".join(problems)
+        return report
 
 
 @tool
@@ -265,15 +276,15 @@ def delete_nodes(
 ) -> str:
     """Remove nodes (and their children) from an artboard."""
     session_id = artifacts.session_id_of(runtime)
-    doc = document.load(session_id)
-    try:
-        board = doc.artboard(artboard_id)
-    except LookupError as why:
-        return f"Error: {why}"
-    removed = document.delete(board, node_ids)
-    if removed:
-        _changed(runtime, session_id, doc, board, "edit")
-    return f"Removed {removed} of {len(node_ids)} node(s) from {board.id}."
+    with document.editing(session_id) as doc:
+        try:
+            board = doc.artboard(artboard_id)
+        except LookupError as why:
+            return f"Error: {why}"
+        removed = document.delete(board, node_ids)
+        if removed:
+            _changed(runtime, session_id, doc, board, "edit")
+        return f"Removed {removed} of {len(node_ids)} node(s) from {board.id}."
 
 
 @tool
@@ -284,11 +295,11 @@ def set_fonts(
     """Load Google Fonts on the canvas. Then use them with an inline
     `font-family` style or a Tailwind arbitrary value like font-['Fraunces']."""
     session_id = artifacts.session_id_of(runtime)
-    doc = document.load(session_id)
-    doc.fonts = document.clean_fonts([*doc.fonts, *families])
-    document.save(session_id, doc)
-    _emit(runtime, {"type": "design.fonts", "fonts": doc.fonts, "rev": doc.rev})
-    return "Fonts loaded: " + ", ".join(doc.fonts)
+    with document.editing(session_id) as doc:
+        doc.fonts = document.clean_fonts([*doc.fonts, *families])
+        document.save(session_id, doc)
+        _emit(runtime, {"type": "design.fonts", "fonts": doc.fonts, "rev": doc.rev})
+        return "Fonts loaded: " + ", ".join(doc.fonts)
 
 
 @tool
@@ -308,8 +319,9 @@ async def review_design(
         return f"Error: {why}"
 
     request_id = uuid.uuid4().hex[:12]
-    future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
-    _screenshots[request_id] = future
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[str] = loop.create_future()
+    _screenshots[request_id] = (loop, future)
     _emit(
         runtime,
         {"type": "design.screenshot", "request_id": request_id, "artboard_id": board.id},
@@ -324,8 +336,14 @@ async def review_design(
     from polly_server.models import chat_model
 
     try:
-        # A reasoning model: its thinking counts against the budget, so leave room.
-        critic = chat_model(model=settings.vision_model, max_tokens=6000)
+        # A thinking model at the conversation's effort; leave room for its
+        # thinking, or it spends the budget deliberating and hands back nothing.
+        owner = sessions.get(session_id)
+        critic = chat_model(
+            model=settings.vision_model,
+            reasoning_effort=owner.reasoning_effort if owner else None,
+            max_tokens=32_000,
+        )
         reply = await critic.ainvoke(
             [
                 HumanMessage(
@@ -347,7 +365,12 @@ async def review_design(
     except Exception as exc:  # noqa: BLE001 - a failed critique must not fail the design
         return f"The critic could not look at it ({type(exc).__name__}: {exc}). Skip the review."
     text = reply.text if isinstance(reply.text, str) else str(reply.content)
-    return text.strip() or "The critic returned nothing. Skip the review."
+    if text.strip():
+        return text.strip()
+    return (
+        "The critic had no verdict this time. Check the frame against the brief "
+        "yourself (overflow, contrast, spacing) and do not call review_design on it again."
+    )
 
 
 DESIGN_TOOLS = (

@@ -1030,6 +1030,37 @@ kbd {
   border-bottom: 1px solid var(--line);
 }
 
+/* the chosen model's reasoning effort, under the menu's header */
+.menu-effort {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 6px 10px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.menu-effort-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.menu-effort .segmented button {
+  padding: 3px 10px;
+}
+
+/* "GLM 5.3 · High" in the model chip */
+.chip-effort {
+  color: var(--faint);
+}
+
+.chip-effort::before {
+  content: '·';
+  margin-right: 5px;
+}
+
 .badge {
   font-style: normal;
   font-size: 10px;
@@ -1475,6 +1506,13 @@ kbd {
   color: var(--muted);
 }
 
+.step-time {
+  flex: none;
+  color: var(--faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .step-body {
   margin: 2px 0 8px 7px;
   padding: 2px 0 2px 16px;
@@ -1555,10 +1593,37 @@ kbd {
   margin-bottom: 2px;
 }
 
+.step-summary .chev {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--faint);
+  transition: transform 0.12s;
+}
+
+.step-summary .chev.is-open {
+  transform: rotate(90deg);
+}
+
+/* the steps behind a summary, set in under it */
+.steps-body {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 4px 5px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
 .step-problems {
   flex: none;
   font-size: 12px;
   color: var(--down);
+}
+
+.step-rejected {
+  flex: none;
+  font-size: 12px;
+  color: var(--faint);
 }
 
 .step.is-compact .step-head {
@@ -1934,6 +1999,11 @@ kbd {
 }
 
 .md li + li {
+  margin-top: 0.4em;
+}
+
+.md li > ul,
+.md li > ol {
   margin-top: 0.3em;
 }
 

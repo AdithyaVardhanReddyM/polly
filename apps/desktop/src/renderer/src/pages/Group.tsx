@@ -162,6 +162,7 @@ export function Group({ agents, onEdit, onCreate }: Props): React.JSX.Element {
         <AgentComposer
           store={useGroupChat}
           disabled={!lead}
+          defaultModel={lead?.model ?? ''}
           mentionable={others}
           placeholder={session ? 'Reply to the group…' : `Message ${group.name}…`}
         />

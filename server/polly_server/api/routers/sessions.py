@@ -132,6 +132,7 @@ def create_session(body: SessionCreate) -> Session:
     return sessions.create(
         project_id,
         model=model,
+        reasoning_effort=body.reasoning_effort,
         mode=mode,
         title=body.title,
         agent_id=spec.id,
@@ -164,8 +165,8 @@ def patch_session(session_id: str, body: SessionPatch) -> Session:
     changes = body.model_dump(exclude_none=True)
     if "model" in changes and not model_registry.known(changes["model"]):
         raise HTTPException(400, f"unknown model {changes['model']!r}")
-    if session.id in manager.active and ("model" in changes or "mode" in changes):
-        raise HTTPException(409, "stop the current run before changing the model or mode")
+    if session.id in manager.active and changes.keys() & {"model", "mode", "reasoning_effort"}:
+        raise HTTPException(409, "stop the current run before changing the model, effort or mode")
     if session.agent_id != "coder":
         changes.pop("mode", None)
     if "members" in changes:

@@ -3,6 +3,7 @@ import type {
   ApprovalRequired,
   CoderEvent,
   Decision,
+  Effort,
   FileChange,
   ModelOption,
   PermissionMode,
@@ -113,6 +114,8 @@ interface CoderState {
   cancel: () => Promise<void>
   setMode: (mode: PermissionMode) => Promise<void>
   setModel: (model: string) => Promise<void>
+  /** How hard the model thinks: the open session's, or the next one's. */
+  setEffort: (effort: Effort) => Promise<void>
   refreshChanges: () => Promise<void>
   acceptChanges: (paths?: string[]) => Promise<void>
   revertChanges: (paths?: string[]) => Promise<void>
@@ -439,6 +442,12 @@ export function reduce(items: TranscriptItem[], event: CoderEvent, main = 'coder
       )
     }
 
+    case 'notice':
+      return [
+        ...items,
+        { kind: 'notice', id: `notice-${event.run_id}-${event.seq}`, tone: event.tone, text: event.text }
+      ]
+
     case 'compaction':
       return [
         ...items,
@@ -727,6 +736,7 @@ export const useCoder = create<CoderState>((set, get) => {
         const created = await api.sessions.create({
           project_id: pid,
           model: draft?.model,
+          reasoning_effort: draft?.reasoning_effort ?? undefined,
           mode: draft?.mode
         })
         if (!created.ok) {
@@ -810,6 +820,26 @@ export const useCoder = create<CoderState>((set, get) => {
       if (res.ok) {
         set({ session: res.data, usage: { ...get().usage, contextWindow: windowFor(model) } })
       } else set({ error: res.error })
+    },
+
+    async setEffort(effort) {
+      const s = get().session
+      const sid = get().sessionId
+      if (!sid) {
+        const pid = get().projectId
+        const project = get().projects.find((p) => p.id === pid)
+        const draft = draftSession(
+          pid,
+          s?.model ?? project?.settings.default_model ?? '',
+          s?.mode ?? project?.settings.default_mode ?? 'supervised',
+          s
+        )
+        set({ session: { ...draft, reasoning_effort: effort } })
+        return
+      }
+      const res = await api.sessions.update(sid, { reasoning_effort: effort })
+      if (res.ok) set({ session: res.data })
+      else set({ error: res.error })
     },
 
     async refreshChanges() {
@@ -919,6 +949,7 @@ function draftSession(
     members: null,
     title: '',
     model,
+    reasoning_effort: prev?.reasoning_effort ?? null,
     mode,
     created_at: prev?.created_at ?? now,
     updated_at: now,

@@ -141,3 +141,88 @@ def test_designer_draws_and_the_app_hears_about_it(monkeypatch, configure):
     saved = document.load(session.id)
     assert saved.rev > doc.rev and len(saved.artboards) == 2
     assert saved.artboards[1].x == 390 + document.GAP
+
+
+def test_loose_layers_stay_out_of_frame_placement() -> None:
+    doc = DesignDoc(
+        artboards=[
+            board(),
+            Artboard(id=document.CANVAS_ID, name="Canvas", y=-500, width=0, height=0),
+        ]
+    )
+    # Placed beside the frame on its top line, not on the loose layer's origin.
+    assert document.place_next(doc, 390) == (390 + document.GAP, 0)
+    assert "drew outside any frame" in document.summary(doc)
+
+
+def _thought_only():
+    """A reply the output limit stopped mid-thought: nothing said, nothing done."""
+    from langchain_core.messages import AIMessage
+
+    return AIMessage(
+        content="",
+        additional_kwargs={"reasoning_content": "Plan: a home screen with…"},
+        response_metadata={"finish_reason": "length"},
+    )
+
+
+def _run_designer(monkeypatch, configure, *replies):
+    import asyncio
+
+    from polly_server.agents import builders
+    from polly_server.coder.runs import RunManager
+    from tests.conftest import scripted
+
+    configure(nebius_api_key="test-key")
+    session = sessions.create(None, model="m", mode="plan", agent_id="designer")
+    fake = scripted(*replies)
+    real = builders.build_agent
+    monkeypatch.setattr(
+        builders, "build_agent", lambda s, **_: real(s, model=fake, use_cache=False)
+    )
+
+    async def go():
+        run = await RunManager().start(None, session, "a banking app")
+        await run.task
+        return run
+
+    return session, asyncio.run(go())
+
+
+@pytest.mark.usefixtures("memory_checkpointer")
+def test_a_reply_cut_off_while_thinking_gets_one_nudge(monkeypatch, configure):
+    session, run = _run_designer(
+        monkeypatch,
+        configure,
+        _thought_only(),
+        _call("create_artboard", {"name": "Home", "width": 390, "height": 844}, "c1"),
+        "Made the home screen.",
+    )
+    assert run.events[-1]["status"] == "completed", run.events[-1]
+    notices = [e for e in run.events if e["type"] == "notice"]
+    assert len(notices) == 1 and "ran out of room" in notices[0]["text"]
+    assert [b.name for b in document.load(session.id).artboards] == ["Home"]
+
+
+@pytest.mark.usefixtures("memory_checkpointer")
+def test_a_model_that_only_thinks_fails_with_a_reason(monkeypatch, configure):
+    _, run = _run_designer(monkeypatch, configure, _thought_only(), _thought_only())
+    end = run.events[-1]
+    assert end["status"] == "error" and "output budget" in end["error"]
+    assert not end["error"].startswith("OutputLimitReached")
+
+
+@pytest.mark.usefixtures("memory_checkpointer")
+def test_frames_created_side_by_side_are_all_kept(monkeypatch, configure):
+    from langchain_core.messages import AIMessage
+
+    names = ["Home", "Send", "Receive", "Card"]
+    calls = [
+        {"name": "create_artboard", "args": {"name": n, "width": 390, "height": 844}, "id": f"c{i}"}
+        for i, n in enumerate(names)
+    ]
+    session, run = _run_designer(
+        monkeypatch, configure, AIMessage(content="Four screens.", tool_calls=calls), "Done."
+    )
+    assert run.events[-1]["status"] == "completed", run.events[-1]
+    assert sorted(b.name for b in document.load(session.id).artboards) == sorted(names)

@@ -19,6 +19,7 @@ Event types (mirrored by `CoderEvent` in `apps/desktop/src/shared/contracts.ts`)
     usage               {input_tokens, output_tokens, total_tokens, run_total, context_tokens}
     compaction          {node}
     tool.streaming      {agent, name, artboard_id?}   a tool call still being written
+    notice              {tone, text}   something the user should know about the run
 
 A teammate at work (`agents/delegation.py`) sends the same events through the
 lead's run, each marked `via` (the lead's `ask_teammate` call) and `teammate`
@@ -111,6 +112,8 @@ def wire_message(message: BaseMessage) -> dict[str, Any] | None:
             "truncated": truncated,
         }
     if message.type == "human":
+        if message.additional_kwargs.get("polly_hidden"):
+            return None  # a nudge Polly sent the model, not something the user said
         shown = message.additional_kwargs.get("polly_display") or text_of(message)
         return {"role": "user", "id": message.id or uuid.uuid4().hex, "text": shown}
     return None
