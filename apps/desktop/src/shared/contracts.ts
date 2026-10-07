@@ -280,7 +280,7 @@ export interface ApprovalRequest {
   args: Record<string, unknown>
   description: string
   allowed_decisions: ('approve' | 'edit' | 'reject')[]
-  kind: 'edit' | 'delete' | 'command' | 'other'
+  kind: 'edit' | 'delete' | 'command' | 'network' | 'other'
   preview: { path?: string | null; command?: string | null }
 }
 

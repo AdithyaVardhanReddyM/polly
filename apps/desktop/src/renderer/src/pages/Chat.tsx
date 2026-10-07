@@ -41,6 +41,8 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
   const sessionId = useChat((s) => s.sessionId)
   const items = useChat((s) => s.items)
   const run = useChat((s) => s.run)
+  const approval = useChat((s) => s.approval)
+  const decide = useChat((s) => s.decide)
   const sources = useChat((s) => s.sources)
   const error = useChat((s) => s.error)
   const clearError = useChat((s) => s.clearError)
@@ -118,7 +120,9 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
             <b>{session?.title || 'New chat'}</b>
             <span>{agent.name}</span>
           </div>
-          <span className={`run-state is-${run}`}>{run === 'running' ? 'Working' : ''}</span>
+          <span className={`run-state is-${run}`}>
+            {run === 'running' ? 'Working' : run === 'awaiting_approval' ? 'Needs approval' : ''}
+          </span>
           <TeamButton store={useChat} lead={agent} />
           <button className="icon-btn" title={`Edit ${agent.name}`} onClick={() => onEdit(agent.id)}>
             <Pencil />
@@ -138,8 +142,17 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
           <div className="banner is-warn">
             <TriangleAlert />
             <span>
-              {agent.name} cannot run code yet. Add <code>NEBIUS_PROJECT_ID</code> to{' '}
-              <code>.env</code> and restart the server.
+              {agent.name} cannot run code yet.{' '}
+              {h.sandbox.provider === 'NVIDIA OpenShell' ? (
+                <>
+                  Start an OpenShell gateway (<code>openshell status</code>) and restart the
+                  server.
+                </>
+              ) : (
+                <>
+                  Add <code>NEBIUS_PROJECT_ID</code> to <code>.env</code> and restart the server.
+                </>
+              )}
             </span>
           </div>
         )}
@@ -191,7 +204,14 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
           </div>
         ) : (
           <OutputContext.Provider value={resolve}>
-            <TranscriptView items={items} run={run} sources={sources} agent={agent} />
+            <TranscriptView
+              items={items}
+              run={run}
+              approval={approval}
+              onDecide={decide}
+              sources={sources}
+              agent={agent}
+            />
           </OutputContext.Provider>
         )}
 

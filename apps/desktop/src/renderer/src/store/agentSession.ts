@@ -1,7 +1,9 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import type {
+  ApprovalRequired,
   ChangeReport,
   CoderEvent,
+  Decision,
   Effort,
   PRFacts,
   Scorecard,
@@ -28,6 +30,8 @@ export interface AgentSessionState {
   session: Session | null
   items: TranscriptItem[]
   run: RunState
+  /** What the agent is waiting on the user to approve (a sandbox's network access). */
+  approval: ApprovalRequired | null
   error: string | null
   /** Fetching a PR before the review starts. */
   starting: boolean
@@ -63,6 +67,8 @@ export interface AgentSessionState {
   /** Choose how hard the model thinks: the open conversation's, and the next new one's. */
   setEffort: (effort: Effort) => Promise<void>
   cancel: () => Promise<void>
+  /** Answer the pending approval, and let the agent carry on. */
+  decide: (decisions: Decision[]) => Promise<void>
   review: (prUrl: string) => Promise<boolean>
   clearError: () => void
 }
@@ -105,6 +111,7 @@ export function createAgentStore({
         session: null,
         items: [],
         run: 'idle',
+        approval: null,
         members: null,
         sources: [],
         report: null,
@@ -121,9 +128,14 @@ export function createAgentStore({
       switch (event.type) {
         case 'run.started':
           patch.run = 'running'
+          patch.approval = null
+          break
+        case 'approval.required':
+          patch.approval = { interrupt_id: event.interrupt_id, requests: event.requests }
           break
         case 'run.finished':
-          patch.run = 'idle'
+          patch.run = event.status === 'awaiting_approval' ? 'awaiting_approval' : 'idle'
+          if (event.status !== 'awaiting_approval') patch.approval = null
           break
         case 'sources.added': {
           const known = new Set(state.sources.map((s) => s.id))
@@ -180,6 +192,7 @@ export function createAgentStore({
       session: null,
       items: [],
       run: 'idle',
+      approval: null,
       error: null,
       starting: false,
       members: null,
@@ -264,7 +277,8 @@ export function createAgentStore({
             ? ownerOf(t.session)
             : get().agentId,
           items,
-          run: t.run_id ? 'running' : 'idle',
+          approval: t.pending_approval,
+          run: t.pending_approval ? 'awaiting_approval' : t.run_id ? 'running' : 'idle',
           ...(artifacts.ok
             ? {
                 sources: artifacts.data.sources,
@@ -274,7 +288,7 @@ export function createAgentStore({
               }
             : {})
         })
-        if (t.run_id) {
+        if (t.run_id && !t.pending_approval) {
           // Still running (a review, change research, or a reload): follow it live.
           const { path } = streams.events(id, -1)
           void drive(path, undefined, id)
@@ -363,6 +377,14 @@ export function createAgentStore({
       async cancel() {
         const sid = get().sessionId
         if (sid) await api.sessions.cancel(sid)
+      },
+
+      async decide(decisions) {
+        const sid = get().sessionId
+        if (!sid || !get().approval) return
+        set({ approval: null })
+        const { path, body } = streams.decisions(sid, decisions)
+        await drive(path, body, sid)
       },
 
       async review(prUrl) {

@@ -122,6 +122,7 @@ export function Builder({
   const h = server.health
   const searchReady = h?.search.configured ?? true
   const sandboxReady = h?.sandbox.configured ?? true
+  const openshell = h?.sandbox.provider === 'NVIDIA OpenShell'
   const modelReady = h?.model.configured ?? true
 
   const defaultModel = models.find((m) => m.is_default)
@@ -414,8 +415,14 @@ export function Builder({
                 icon={<SquareTerminal />}
                 title="Code sandbox"
                 detail="Writes and runs Python in its own sandbox: analysis, charts and files."
-                by="Nebius ConTree"
-                missing={sandboxReady ? null : 'Needs NEBIUS_PROJECT_ID'}
+                by={openshell ? 'NVIDIA OpenShell' : 'Nebius ConTree'}
+                missing={
+                  sandboxReady
+                    ? null
+                    : openshell
+                      ? 'Needs an OpenShell gateway'
+                      : 'Needs NEBIUS_PROJECT_ID'
+                }
                 checked={fields.sandbox}
                 onChange={(on) => set('sandbox', on)}
               />

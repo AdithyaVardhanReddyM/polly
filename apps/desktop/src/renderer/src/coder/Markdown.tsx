@@ -12,12 +12,14 @@ const rehypePlugins = [[rehypeHighlight, { detect: true, ignoreMissing: true }]]
 export const CitationContext = createContext<Source[]>([])
 
 /**
- * Turns the path of a file an agent saved in its sandbox (`/outputs/chart.png`)
- * into a URL the app can load; null where the session has no sandbox.
+ * Turns the path of a file an agent saved in its sandbox (`/outputs/chart.png`,
+ * or `/sandbox/outputs/chart.png` on OpenShell) into a URL the app can load;
+ * null where the session has no sandbox.
  */
 export const OutputContext = createContext<((path: string) => string) | null>(null)
 
-const isOutput = (url: string | null | undefined): url is string => !!url?.startsWith('/outputs/')
+const isOutput = (url: string | null | undefined): url is string =>
+  !!url && (url.startsWith('/outputs/') || url.startsWith('/sandbox/outputs/'))
 
 const CITE = /(?<![\w\]])\[(\d{1,3})\](?![(:[])/g
 

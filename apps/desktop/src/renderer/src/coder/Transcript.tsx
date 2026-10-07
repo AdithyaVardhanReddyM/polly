@@ -10,7 +10,12 @@ import {
   TriangleAlert
 } from 'lucide-react'
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { AgentSummary, ApprovalRequired, Source } from '../../../shared/contracts'
+import type {
+  AgentSummary,
+  ApprovalRequired,
+  Decision,
+  Source
+} from '../../../shared/contracts'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { type RunState, type ToolItem, type TranscriptItem, useCoder } from '../store/coder'
 import { findAgent, useRoster } from '../store/roster'
@@ -116,6 +121,7 @@ export function TranscriptView({
   items,
   run,
   approval = null,
+  onDecide,
   sources = [],
   footer,
   agent,
@@ -124,6 +130,8 @@ export function TranscriptView({
   items: TranscriptItem[]
   run: RunState
   approval?: ApprovalRequired | null
+  /** Answers `approval`; the Coder's store when left out. */
+  onDecide?: (decisions: Decision[]) => Promise<void>
   sources?: Source[]
   /** Whose robot animates in the status line while a run is live. */
   agent?: AvatarAgent
@@ -208,7 +216,7 @@ export function TranscriptView({
               <Working seconds={seconds} label={activity(items, waitingOn)} agent={agent} />
             )
           )}
-          {approval && <ApprovalCard approval={approval} />}
+          {approval && <ApprovalCard approval={approval} onDecide={onDecide} />}
           {footer}
         </div>
         {!pinned && (
