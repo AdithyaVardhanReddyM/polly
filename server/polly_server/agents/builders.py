@@ -72,7 +72,7 @@ def _resolve(spec: AgentSpec, apps: tuple[str, ...]) -> AgentSpec:
     searches = bool(tools) if spec.division == "custom" else spec.id != "designer"
     prompt = f"{_dated(spec.system_prompt, sources=searches)}\n\n{voice.REPORTING}"
     if spec.sandbox and sandbox.available():
-        prompt = f"{prompt}\n\n{sandbox.PROMPT}"
+        prompt = f"{prompt}\n\n{sandbox.prompt()}"
     return replace(
         spec,
         tools=tools,

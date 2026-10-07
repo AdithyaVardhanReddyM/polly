@@ -74,9 +74,9 @@ def health() -> Health:
             configured=settings.model_configured,
         ),
         sandbox=Provider(
-            provider="Nebius ConTree"
-            if settings.sandbox_provider == "contree"
-            else settings.sandbox_provider,
+            provider={"contree": "Nebius ConTree", "openshell": "NVIDIA OpenShell"}.get(
+                settings.sandbox_provider, settings.sandbox_provider
+            ),
             configured=sandbox.available(),
         ),
         search=Provider(provider="Tavily", configured=bool(settings.tavily_api_key)),

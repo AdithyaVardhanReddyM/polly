@@ -57,6 +57,11 @@ class Settings:
     # tools agents get from them.
     composio_api_key: str
 
+    # OpenShell (`POLLY_SANDBOX=openshell`): the image sandboxes start from, and
+    # the gateway to use; empty is the one the `openshell` CLI has active.
+    openshell_image: str = "python:3.12-slim"
+    openshell_gateway: str = ""
+
     @property
     def search_configured(self) -> bool:
         return bool(self.tavily_api_key)
@@ -70,7 +75,8 @@ class Settings:
         # ConTree signs in with the Token Factory key and the Nebius project.
         if self.sandbox_provider == "contree":
             return bool(self.nebius_api_key and self.nebius_project_id)
-        return False
+        # OpenShell signs in with the CLI's gateway credentials.
+        return self.sandbox_provider == "openshell"
 
     def data_path(self, *parts: str) -> Path:
         """A path under the data dir, created on first use."""
@@ -95,6 +101,8 @@ def load() -> Settings:
         sandbox_provider=_env("POLLY_SANDBOX", "contree"),
         tavily_api_key=_env("TAVILY_API_KEY"),
         composio_api_key=_env("COMPOSIO_API_KEY"),
+        openshell_image=_env("POLLY_OPENSHELL_IMAGE", "python:3.12-slim"),
+        openshell_gateway=_env("POLLY_OPENSHELL_GATEWAY"),
     )
 
 
