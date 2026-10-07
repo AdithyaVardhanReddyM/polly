@@ -11,6 +11,9 @@ agent's `execute` and file tools work inside the sandbox.
 
 Sandboxes start from a Python image with the usual data libraries, built once
 per Nebius project and found again by tag.
+
+`POLLY_SANDBOX=openshell` runs them on NVIDIA OpenShell instead, behind a
+network policy the user approves changes to (`openshell_sandbox.py`).
 """
 
 from __future__ import annotations
@@ -44,25 +47,59 @@ WORK_DIR = "/workspace"
 OUTPUT_DIR = "/outputs"
 MAX_OUTPUT_BYTES = 25 * 1024 * 1024
 
-PROMPT = f"""\
+PROMPT = """\
 ## Your sandbox
 
-You have a private Linux sandbox with Python 3.12 and {PACKAGES.replace(" ", ", ")} \
+You have a private Linux sandbox with Python 3.12 and {packages} \
 installed; `pip install` works for anything else. `execute` runs a shell command in it and \
 the file tools read and write its files. Files stay between your turns in this \
 conversation, but no process outlives its command.
 
-- Work in {WORK_DIR}. Write a script to a file and run it rather than a long one-liner.
+- Work in {work}. Write a script to a file and run it rather than a long one-liner.
 - Compute, don't guess: if a number, a table or a chart can come from running code, run it.
-- Save what the user should see (charts as PNG, CSVs, reports) under {OUTPUT_DIR}/ and \
-show it in your reply with markdown: `![Monthly revenue]({OUTPUT_DIR}/revenue.png)` for an \
-image, `[results.csv]({OUTPUT_DIR}/results.csv)` for any other file. Give each new chart \
+- Save what the user should see (charts as PNG, CSVs, reports) under {out}/ and \
+show it in your reply with markdown: `![Monthly revenue]({out}/revenue.png)` for an \
+image, `[results.csv]({out}/results.csv)` for any other file. Give each new chart \
 a new file name.
 - If a command fails, read the error, fix the cause and run it again."""
 
+NETWORK_NOTE = """
+- The sandbox's network is closed apart from `pip install`. When a command needs another \
+site, run it anyway: the user is asked whether to allow it, and the command's output tells \
+you what they decided. Never try to get around a block."""
+
+
+def _openshell() -> bool:
+    return settings.sandbox_provider == "openshell"
+
+
+def output_dir() -> str:
+    if _openshell():
+        from polly_server import openshell_sandbox
+
+        return openshell_sandbox.OUTPUT_DIR
+    return OUTPUT_DIR
+
+
+def prompt() -> str:
+    """What an agent with a sandbox is told about it."""
+    if _openshell():
+        from polly_server import openshell_sandbox
+
+        work, out = openshell_sandbox.WORK_DIR, openshell_sandbox.OUTPUT_DIR
+        text = PROMPT.format(packages=PACKAGES.replace(" ", ", "), work=work, out=out)
+        return text + NETWORK_NOTE
+    return PROMPT.format(packages=PACKAGES.replace(" ", ", "), work=WORK_DIR, out=OUTPUT_DIR)
+
 
 def available() -> bool:
-    return settings.sandbox_configured and importlib.util.find_spec("contree_sdk") is not None
+    if not settings.sandbox_configured:
+        return False
+    if _openshell():
+        from polly_server import openshell_sandbox
+
+        return openshell_sandbox.configured()
+    return importlib.util.find_spec("contree_sdk") is not None
 
 
 def _on_sdk_loop(coro) -> Any:
@@ -196,21 +233,35 @@ class SessionSandbox(BaseSandbox):
         return await asyncio.to_thread(self.download_files, paths)
 
 
-_sandboxes: dict[str, SessionSandbox] = {}
+_sandboxes: dict[str, BaseSandbox] = {}
 _registry_lock = threading.Lock()
 
 
-def for_session(session_id: str) -> SessionSandbox:
-    """The session's sandbox; the agent and the app's file requests share it."""
+def for_session(session_id: str) -> Any:
+    """The session's sandbox (`SessionSandbox`, or `OpenShellSandbox` with
+    `POLLY_SANDBOX=openshell`); the agent and the app's file requests share it."""
     with _registry_lock:
         if session_id not in _sandboxes:
-            _sandboxes[session_id] = SessionSandbox(session_id)
+            if _openshell():
+                from polly_server.openshell_sandbox import OpenShellSandbox
+
+                _sandboxes[session_id] = OpenShellSandbox(session_id)
+            else:
+                _sandboxes[session_id] = SessionSandbox(session_id)
         return _sandboxes[session_id]
 
 
 def forget(session_id: str) -> None:
+    """The session is being deleted. A ConTree sandbox is only a saved version;
+    an OpenShell one is a running machine, deleted in the background."""
     with _registry_lock:
         _sandboxes.pop(session_id, None)
+    if _openshell() and available():
+        from polly_server.openshell_sandbox import OpenShellSandbox
+
+        box = OpenShellSandbox(session_id)
+        if box.saved_version():
+            threading.Thread(target=box.discard, daemon=True).start()
 
 
 class NoSuchOutput(LookupError):
@@ -218,19 +269,27 @@ class NoSuchOutput(LookupError):
 
 
 def output_path(raw: str) -> PurePosixPath:
-    """`raw` as a path under the output folder, or `NoSuchOutput`."""
-    path = PurePosixPath(raw if raw.startswith("/") else f"{OUTPUT_DIR}/{raw}")
-    if ".." in path.parts or path.parts[:2] != ("/", OUTPUT_DIR.strip("/")) or len(path.parts) < 3:
+    """`raw` as a path under the output folder, or `NoSuchOutput`. A path under
+    either backend's folder is accepted, so links survive a switch."""
+    out = PurePosixPath(output_dir())
+    rel = raw
+    for prefix in (output_dir(), OUTPUT_DIR, "/sandbox/outputs"):
+        if rel.startswith(f"{prefix}/"):
+            rel = rel[len(prefix) + 1 :]
+            break
+    path = out / rel
+    if rel.startswith("/") or ".." in path.parts or len(path.parts) <= len(out.parts):
         raise NoSuchOutput(raw)
     return path
 
 
 async def read_output(session_id: str, raw: str) -> tuple[bytes, str]:
     """A file the agent saved for the user, and its media type. The last copy
-    fetched is kept beside the session, so it still shows when ConTree cannot
-    be reached."""
+    fetched is kept beside the session, so it still shows when the sandbox
+    cannot be reached."""
     path = output_path(raw)
-    kept = session_dir(session_id) / "outputs" / "/".join(path.parts[2:])
+    depth = len(PurePosixPath(output_dir()).parts)
+    kept = session_dir(session_id) / "outputs" / "/".join(path.parts[depth:])
     media = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     box = for_session(session_id)
     if available() and box.saved_version():

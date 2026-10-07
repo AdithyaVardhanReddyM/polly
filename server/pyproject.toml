@@ -21,6 +21,8 @@ dependencies = [
     "composio-langchain>=0.25.0",
     # Nebius ConTree sandboxes: where agents run code.
     "contree-sdk[langchain]>=0.3.6",
+    # Or NVIDIA OpenShell sandboxes, behind a network policy (`POLLY_SANDBOX=openshell`).
+    "openshell>=0.1.2",
     # Knowledge bases: reading PDFs (and rendering scanned pages), Word and
     # Excel files and images, and taking uploads.
     "pypdf>=6.19.0",

@@ -33,6 +33,8 @@ export function Group({ agents, onEdit, onCreate }: Props): React.JSX.Element {
   const sessionId = useGroupChat((s) => s.sessionId)
   const items = useGroupChat((s) => s.items)
   const run = useGroupChat((s) => s.run)
+  const approval = useGroupChat((s) => s.approval)
+  const decide = useGroupChat((s) => s.decide)
   const sources = useGroupChat((s) => s.sources)
   const error = useGroupChat((s) => s.error)
   const clearError = useGroupChat((s) => s.clearError)
@@ -109,7 +111,9 @@ export function Group({ agents, onEdit, onCreate }: Props): React.JSX.Element {
               {members.length} agents{lead ? ` · ${lead.name} leads` : ''}
             </span>
           </div>
-          <span className={`run-state is-${run}`}>{run === 'running' ? 'Working' : ''}</span>
+          <span className={`run-state is-${run}`}>
+            {run === 'running' ? 'Working' : run === 'awaiting_approval' ? 'Needs approval' : ''}
+          </span>
           <button className="icon-btn" title={`Edit ${group.name}`} onClick={() => onEdit(group.id)}>
             <Settings2 />
           </button>
@@ -155,7 +159,15 @@ export function Group({ agents, onEdit, onCreate }: Props): React.JSX.Element {
           </div>
         ) : (
           <OutputContext.Provider value={resolve}>
-            <TranscriptView items={items} run={run} sources={sources} agent={lead} speakers />
+            <TranscriptView
+              items={items}
+              run={run}
+              approval={approval}
+              onDecide={decide}
+              sources={sources}
+              agent={lead}
+              speakers
+            />
           </OutputContext.Provider>
         )}
 

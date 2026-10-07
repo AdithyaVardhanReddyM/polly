@@ -1,5 +1,5 @@
-import { FilePen, ShieldAlert, SquareTerminal, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { FilePen, Globe, ShieldAlert, SquareTerminal, Trash2 } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ApprovalRequest,
   ApprovalRequired,
@@ -34,6 +34,7 @@ const ICON = {
   edit: <FilePen />,
   delete: <Trash2 />,
   command: <SquareTerminal />,
+  network: <Globe />,
   other: <ShieldAlert />
 }
 
@@ -41,12 +42,28 @@ const TITLE = {
   edit: 'Edit',
   delete: 'Delete',
   command: 'Run command',
+  network: 'Network access',
   other: 'Use a tool'
 }
 
-export function ApprovalCard({ approval }: { approval: ApprovalRequired }): React.JSX.Element {
-  const decide = useCoder((s) => s.decide)
+type Decide = (decisions: Decision[], remember?: RememberRule[]) => Promise<void>
+
+/**
+ * A paused action waiting for the user. The Coder's store answers by default;
+ * other chats pass their own `onDecide`.
+ */
+export function ApprovalCard({
+  approval,
+  onDecide
+}: {
+  approval: ApprovalRequired
+  onDecide?: Decide
+}): React.JSX.Element {
+  const coderDecide = useCoder((s) => s.decide)
+  const decide = onDecide ?? coderDecide
   const requests = approval.requests
+  // An approved network rule stays in the sandbox's policy: nothing to remember.
+  const network = requests.every((r) => r.kind === 'network')
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
   const [scope, setScope] = useState<Record<number, string>>({})
@@ -87,7 +104,7 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequired }): Reac
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const options = requests.length === 1 ? scopes(requests[0]) : []
+  const options = requests.length === 1 && !network ? scopes(requests[0]) : []
   const only = requests[0]
 
   return (
@@ -100,7 +117,11 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequired }): Reac
           <input
             className="approval-reason"
             autoFocus
-            placeholder="Tell the Coder what to do instead (optional)"
+            placeholder={
+              network
+                ? 'Tell the agent why, or what to do instead (optional)'
+                : 'Tell the Coder what to do instead (optional)'
+            }
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             onKeyDown={(e) => {
@@ -126,9 +147,11 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequired }): Reac
             {requests.length > 1 ? 'Approve all' : 'Approve'}
             <kbd>Y</kbd>
           </button>
-          <button className="btn" onClick={() => submit('approve', true)} disabled={busy}>
-            Always allow
-          </button>
+          {!network && (
+            <button className="btn" onClick={() => submit('approve', true)} disabled={busy}>
+              Always allow
+            </button>
+          )}
           {options.length > 1 && (
             <select
               className="approval-scope"
@@ -187,7 +210,7 @@ function RequestView({ request }: { request: ApprovalRequest }): React.JSX.Eleme
     return null
   }, [request, current])
 
-  const shown = path.replace(/^\//, '')
+  const shown = request.kind === 'network' ? hosts(request.args) : path.replace(/^\//, '')
   return (
     <div className="approval-item">
       <div className="approval-head">
@@ -196,6 +219,7 @@ function RequestView({ request }: { request: ApprovalRequest }): React.JSX.Eleme
         {shown && <code title={shown}>{shown}</code>}
         <span className="approval-state">Waiting for approval</span>
       </div>
+      {request.kind === 'network' && <NetworkView args={request.args} />}
       {request.kind === 'command' && (
         <pre className="approval-command">
           <span>$ </span>
@@ -217,5 +241,64 @@ function RequestView({ request }: { request: ApprovalRequest }): React.JSX.Eleme
         <p className="approval-note">The file will be removed from the project.</p>
       )}
     </div>
+  )
+}
+
+/** A drafted OpenShell rule: `args` as the server's `openshell_sandbox._request` writes them. */
+interface Endpoint {
+  host: string
+  port: number
+  access?: string
+  rules?: string[]
+}
+
+function endpointsOf(args: Record<string, unknown>): Endpoint[] {
+  return Array.isArray(args.endpoints) ? (args.endpoints as Endpoint[]) : []
+}
+
+function hosts(args: Record<string, unknown>): string {
+  return endpointsOf(args)
+    .map((e) => `${e.host}:${e.port}`)
+    .join(', ')
+}
+
+function NetworkView({ args }: { args: Record<string, unknown> }): React.JSX.Element {
+  const text = (key: string): string => (typeof args[key] === 'string' ? String(args[key]) : '')
+  const endpoints = endpointsOf(args)
+  const access = [...new Set(endpoints.map((e) => e.access).filter(Boolean))].join(', ')
+  const rules = endpoints.flatMap((e) => e.rules ?? []).join(', ')
+  const facts: [string, string][] = (
+    [
+      ['Program', text('binary')],
+      ['Access', access],
+      ['Requests', rules],
+      ['Why', text('rationale')],
+      ['Prover', text('validation')],
+      ['Security', text('security_notes')]
+    ] as [string, string][]
+  ).filter(([, value]) => value)
+  return (
+    <>
+      {text('command') && (
+        <pre className="approval-command">
+          <span>$ </span>
+          {text('command')}
+        </pre>
+      )}
+      {facts.length > 0 && (
+        <dl className="approval-facts">
+          {facts.map(([label, value]) => (
+            <Fragment key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+      <p className="approval-hint">
+        The sandbox&apos;s network policy blocked this. Approving adds the rule to the policy for
+        the rest of the conversation and runs the command again.
+      </p>
+    </>
   )
 }

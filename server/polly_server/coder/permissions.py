@@ -266,13 +266,15 @@ def remove_rule(project: Project, index: int) -> list[Rule]:
 # ---------- what the user sees on an approval card ----------
 
 
-def kind_of(name: str) -> Literal["edit", "delete", "command", "other"]:
+def kind_of(name: str) -> Literal["edit", "delete", "command", "network", "other"]:
     if name in WRITE_TOOLS:
         return "edit"
     if name in DELETE_TOOLS:
         return "delete"
     if name in EXEC_TOOLS:
         return "command"
+    if name == "network_access":  # an OpenShell sandbox's drafted network rule
+        return "network"
     return "other"
 
 

@@ -62,7 +62,7 @@ Agents work in their own isolated environments rather than on your machine (the 
 - a **sandbox** to run code, install packages and work on files, and
 - when the job needs it, a **virtual desktop** (Linux, later Windows) with a browser and office apps, so an agent can fill in a form, put together a presentation, or work through a web app the way you would.
 
-Sandboxes are provisioned on Nebius ([ConTree](https://docs.tokenfactory.nebius.com/sandboxes/overview)) and started on demand.
+Sandboxes are provisioned on Nebius ([ConTree](https://docs.tokenfactory.nebius.com/sandboxes/overview)) and started on demand. Or, with `POLLY_SANDBOX=openshell`, on [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell), whose network policy keeps a sandbox off the internet apart from PyPI. When code tries to reach anything else, OpenShell drafts the rule that would allow it and checks it with its prover; Polly pauses the agent and shows the rule as an approval card (where it wanted to go, which program asked, the prover's notes). Approve and the rule goes live and the command runs again; reject and the agent is told. See [OpenShell sandboxes](#openshell-sandboxes).
 
 ### Memory and approvals
 
@@ -177,7 +177,7 @@ Override the tiers with `POLLY_MODEL`, `POLLY_FAST_MODEL` and `POLLY_STRONG_MODE
 | --- | --- |
 | Models | NVIDIA Nemotron (Nemotron 3 Super by default, Nano for fast subagents) via **Nebius Token Factory** |
 | Agent runtimes | [Deep Agents](https://docs.langchain.com/oss/python/deepagents/overview) for long-running work, [LangChain agents](https://docs.langchain.com/oss/python/langchain/agents) for quick tasks, [LangGraph](https://docs.langchain.com/oss/python/langgraph/overview) for fixed flows — see below |
-| Sandboxes | **Nebius ConTree**, plugged in as a Deep Agents sandbox backend |
+| Sandboxes | **Nebius ConTree** or **NVIDIA OpenShell**, plugged in as a Deep Agents sandbox backend |
 | Search | Tavily, built in to every agent |
 | Integrations | [Composio](https://composio.dev): connected accounts and their tools, scoped per agent |
 | Server | Python 3.11+, FastAPI, uv |
@@ -265,6 +265,15 @@ npm run lint                # ruff
 npm run typecheck           # TypeScript
 ```
 
+### OpenShell sandboxes
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+openshell status            # the gateway the CLI (and Polly) will use
+```
+
+Then set `POLLY_SANDBOX=openshell` in `.env` and restart the server. Each conversation gets a sandbox named `polly-<session id>` from `POLLY_OPENSHELL_IMAGE` (default `python:3.12-slim`), set up on first use and deleted with the conversation. The gateway needs a compute driver that can run sandboxes: Docker or Podman locally, or a remote Linux gateway. Drafted rules can also be reviewed from the CLI with `openshell rule get polly-<session id>`.
+
 ## Roadmap
 
 - [x] Project scaffolding: desktop shell, agent server, agent catalog
@@ -278,6 +287,7 @@ npm run typecheck           # TypeScript
 - [ ] Coder cloud sessions in sandboxes, with GitHub (push and pull requests)
 - [x] Agent builder: instructions drafted by Nemotron, model, web search, apps
 - [x] Code sandboxes on Nebius ConTree for custom agents, with charts and files shown in chat
+- [x] NVIDIA OpenShell sandboxes, with network policy changes approved in chat
 - [x] One memory about the user, shared by every agent
 - [ ] Skills, knowledge files and subagents for custom agents
 - [ ] Virtual desktops for computer-use agents
