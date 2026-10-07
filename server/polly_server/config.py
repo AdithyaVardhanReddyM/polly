@@ -61,6 +61,8 @@ class Settings:
     # the gateway to use; empty is the one the `openshell` CLI has active.
     openshell_image: str = "python:3.12-slim"
     openshell_gateway: str = ""
+    # Whether routines fire by themselves (`routines/scheduler.py`).
+    routines: bool = True
 
     @property
     def search_configured(self) -> bool:
@@ -103,6 +105,7 @@ def load() -> Settings:
         composio_api_key=_env("COMPOSIO_API_KEY"),
         openshell_image=_env("POLLY_OPENSHELL_IMAGE", "python:3.12-slim"),
         openshell_gateway=_env("POLLY_OPENSHELL_GATEWAY"),
+        routines=_env("POLLY_ROUTINES", "on").lower() not in {"off", "0", "false", "no"},
     )
 
 

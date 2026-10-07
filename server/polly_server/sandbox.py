@@ -24,6 +24,7 @@ import json
 import logging
 import mimetypes
 import threading
+from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any
 from uuid import UUID
@@ -31,6 +32,7 @@ from uuid import UUID
 from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse
 from deepagents.backends.sandbox import BaseSandbox
 
+from polly_server import variables
 from polly_server.config import settings
 from polly_server.sessions import session_dir
 
@@ -100,6 +102,19 @@ def available() -> bool:
 
         return openshell_sandbox.configured()
     return importlib.util.find_spec("contree_sdk") is not None
+
+
+def session_variables(session_id: str) -> list[variables.Variable]:
+    """The variables the agents in a session may use (`variables.py`): the
+    session's lead and its teammates share one sandbox."""
+    from polly_server import sessions
+    from polly_server.agents import team
+
+    session = sessions.get(session_id)
+    if session is None:
+        return []
+    ids = [session.agent_id, *(m.id for m in team.roster(session))]
+    return variables.usable(ids)
 
 
 def _on_sdk_loop(coro) -> Any:
@@ -200,8 +215,11 @@ class SessionSandbox(BaseSandbox):
 
     async def _execute(self, command: str, timeout: int | None) -> ExecuteResponse:
         inner = await self._ready()
-        result = await inner.aexecute(command, timeout=timeout)
+        found = session_variables(self._session_id)
+        result = await inner.aexecute(variables.env_exports(found) + command, timeout=timeout)
         self._save_version()
+        if found:
+            result = replace(result, output=variables.redact(result.output or "", found))
         return result
 
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:

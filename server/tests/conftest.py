@@ -5,6 +5,8 @@ import tempfile
 
 _DATA = tempfile.mkdtemp(prefix="polly-test-")
 os.environ["POLLY_DATA_DIR"] = _DATA
+# Routines fire only when a test fires them.
+os.environ["POLLY_ROUTINES"] = "off"
 os.environ.pop("NEBIUS_API_KEY", None)
 os.environ.pop("TAVILY_API_KEY", None)
 os.environ.pop("COMPOSIO_API_KEY", None)

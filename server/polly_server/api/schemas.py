@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from polly_server import variables
 from polly_server.agents import builders, team
 from polly_server.agents.custom import CustomAgent
 from polly_server.agents.groups import Group
@@ -16,6 +17,7 @@ from polly_server.coder.permissions import Rule
 from polly_server.integrations import assignments
 from polly_server.model_registry import Effort
 from polly_server.projects import Project
+from polly_server.routines import store
 from polly_server.sessions import Session
 
 
@@ -39,6 +41,10 @@ class AgentSummary(BaseModel):
     avatar: dict[str, str]
     # Made by the user: can be edited and deleted.
     custom: bool
+    # Made by Polly, with the user's approval, for a task.
+    hired: bool
+    # Sets up teams of agents for a task (Polly).
+    orchestrator: bool
     # Runs code in a sandbox.
     sandbox: bool
     # Reads and adds to the shared memory about the user.
@@ -64,6 +70,8 @@ class AgentSummary(BaseModel):
             computer=spec.computer,
             avatar={"seed": spec.id, **spec.avatar},
             custom=spec.division == "custom",
+            hired=spec.metadata.get("origin") == "polly",
+            orchestrator=spec.metadata.get("orchestrator") == "true",
             sandbox=spec.sandbox,
             memory=spec.memory,
             model=builders.default_model(spec.id),
@@ -304,12 +312,24 @@ class DecisionsIn(BaseModel):
     remember: list[RememberRule] = Field(default_factory=list)
 
 
+class AnswerIn(BaseModel):
+    """The user's answer to a card (`agents/asks.py`)."""
+
+    interrupt_id: str | None = None
+    approved: bool | None = None
+    answer: str | None = Field(default=None, max_length=4_000)
+    connected: bool | None = None
+    done: bool | None = None
+
+
 class Transcript(BaseModel):
     session: Session
     messages: list[dict[str, Any]]
     todos: list[dict[str, Any]]
     pending_approval: dict[str, Any] | None
     run_id: str | None
+    # A card the run is waiting on (`ask.required`), if any.
+    pending_ask: dict[str, Any] | None = None
 
 
 class ChangePaths(BaseModel):
@@ -382,3 +402,79 @@ class CommentPreview(BaseModel):
 
 class CommentPosted(BaseModel):
     url: str
+
+
+# ---------- variables ----------
+
+
+class VariableOut(BaseModel):
+    """A variable as the app shows it: a secret's value never leaves the server."""
+
+    name: str
+    description: str
+    secret: bool
+    is_set: bool
+    # Only for settings that are not secret.
+    value: str | None
+    agents: list[str]
+    updated_at: float
+
+    @classmethod
+    def of(cls, v: variables.Variable) -> VariableOut:
+        return cls(
+            name=v.name,
+            description=v.description,
+            secret=v.secret,
+            is_set=v.is_set,
+            value=None if v.secret else v.value,
+            agents=v.agents,
+            updated_at=v.updated_at,
+        )
+
+
+class VariableList(BaseModel):
+    variables: list[VariableOut]
+
+
+class VariableIn(BaseModel):
+    """Set or change a variable; what is left out stays as it was."""
+
+    value: str | None = Field(default=None, max_length=10_000)
+    description: str | None = Field(default=None, max_length=200)
+    secret: bool | None = None
+    agents: list[str] | None = Field(default=None, max_length=100)
+
+
+# ---------- routines ----------
+
+
+class RoutineIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    prompt: str = Field(min_length=1, max_length=4_000)
+    trigger: store.Trigger
+    # An agent, or a group (whose lead then runs it).
+    agent_id: str = ""
+    group_id: str | None = None
+    members: list[str] | None = Field(default=None, max_length=team.MAX_TEAMMATES)
+    enabled: bool = True
+
+
+class RoutinePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    prompt: str | None = Field(default=None, min_length=1, max_length=4_000)
+    trigger: store.Trigger | None = None
+    enabled: bool | None = None
+
+
+class RoutineOut(store.Routine):
+    # In words: "on the schedule `0 8 * * *` (UTC)".
+    when: str
+    running: bool
+
+    @classmethod
+    def of(cls, routine: store.Routine, *, running: bool) -> RoutineOut:
+        return cls(**routine.model_dump(), when=store.describe(routine.trigger), running=running)
+
+
+class RoutineList(BaseModel):
+    routines: list[RoutineOut]

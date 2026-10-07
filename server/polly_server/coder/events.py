@@ -14,6 +14,7 @@ Event types (mirrored by `CoderEvent` in `apps/desktop/src/shared/contracts.ts`)
     subagent.started    {task_id, name, description, call_id}
     subagent.completed  {task_id, name, summary}
     approval.required   {interrupt_id, requests: [...]}
+    ask.required        {interrupt_id, kind, ...}         a card for the user (`agents/asks.py`)
     todos.updated       {todos}
     file.changed        {path, kind, additions, deletions}
     usage               {input_tokens, output_tokens, total_tokens, run_total, context_tokens}
@@ -36,6 +37,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
 
+from polly_server.agents import asks
 from polly_server.coder.permissions import kind_of
 
 MAX_OUTPUT_CHARS = 20_000
@@ -260,7 +262,11 @@ class _Translator:
         for node, update in data.items():
             if node == "__interrupt__":
                 for interrupt in update or ():
-                    events.append({"type": "approval.required", **approval_payload(interrupt)})
+                    card = asks.payload_of(interrupt)
+                    if card is not None:
+                        events.append({"type": "ask.required", **card})
+                    else:
+                        events.append({"type": "approval.required", **approval_payload(interrupt)})
                 continue
             if not isinstance(update, dict):
                 continue

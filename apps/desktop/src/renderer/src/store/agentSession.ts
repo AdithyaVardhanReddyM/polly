@@ -1,6 +1,8 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import type {
   ApprovalRequired,
+  AskAnswer,
+  AskRequired,
   ChangeReport,
   CoderEvent,
   Decision,
@@ -13,6 +15,13 @@ import type {
 import { api, streams } from '../api'
 import { stream } from '../sse'
 import { fromWire, reduce, type RunState, type TranscriptItem } from './coder'
+import { useRoster } from './roster'
+
+/** Sent on `window` when an agent is made in a conversation; `App` reloads the agents. */
+export const AGENTS_CHANGED = 'polly:agents-changed'
+
+/** Sent on `window` when a routine is made in a conversation. */
+export const ROUTINES_CHANGED = 'polly:routines-changed'
 
 /**
  * A chat with one of the agents that run without a project: the Researcher,
@@ -44,6 +53,8 @@ export interface AgentSessionState {
   model: string | null
   /** The reasoning effort picked for it; null is the model's default. */
   effort: Effort | null
+  /** A card the run waits on: hire an agent, answer a question, connect an app… */
+  pendingAsk: AskRequired | null
 
   sources: Source[]
   report: ChangeReport | null
@@ -69,6 +80,8 @@ export interface AgentSessionState {
   cancel: () => Promise<void>
   /** Answer the pending approval, and let the agent carry on. */
   decide: (decisions: Decision[]) => Promise<void>
+  /** Answer the card the run waits on, and let it carry on. */
+  answer: (value: AskAnswer) => Promise<void>
   review: (prUrl: string) => Promise<boolean>
   clearError: () => void
 }
@@ -113,6 +126,7 @@ export function createAgentStore({
         run: 'idle',
         approval: null,
         members: null,
+        pendingAsk: null,
         sources: [],
         report: null,
         scorecard: null,
@@ -129,13 +143,40 @@ export function createAgentStore({
         case 'run.started':
           patch.run = 'running'
           patch.approval = null
+          patch.pendingAsk = null
           break
         case 'approval.required':
           patch.approval = { interrupt_id: event.interrupt_id, requests: event.requests }
           break
         case 'run.finished':
-          patch.run = event.status === 'awaiting_approval' ? 'awaiting_approval' : 'idle'
-          if (event.status !== 'awaiting_approval') patch.approval = null
+          // A run pauses on a card: a sandbox's network access, or an ask.
+          patch.run =
+            event.status === 'awaiting_approval' && (state.approval || state.pendingAsk)
+              ? 'awaiting_approval'
+              : 'idle'
+          if (patch.run === 'idle') {
+            patch.approval = null
+            patch.pendingAsk = null
+          }
+          break
+        case 'ask.required': {
+          const { seq: _seq, run_id: _run, via: _via, teammate: _mate, type: _type, ...ask } = event
+          patch.pendingAsk = ask as AskRequired
+          patch.run = 'awaiting_approval'
+          break
+        }
+        case 'agent.hired':
+          patch.members = event.members
+          window.dispatchEvent(new CustomEvent(AGENTS_CHANGED))
+          break
+        case 'team.updated':
+          patch.members = event.members
+          break
+        case 'group.created':
+          void useRoster.getState().load()
+          break
+        case 'routine.created':
+          window.dispatchEvent(new CustomEvent(ROUTINES_CHANGED))
           break
         case 'sources.added': {
           const known = new Set(state.sources.map((s) => s.id))
@@ -198,6 +239,7 @@ export function createAgentStore({
       members: null,
       model: null,
       effort: null,
+      pendingAsk: null,
       sources: [],
       report: null,
       scorecard: null,
@@ -278,7 +320,14 @@ export function createAgentStore({
             : get().agentId,
           items,
           approval: t.pending_approval,
-          run: t.pending_approval ? 'awaiting_approval' : t.run_id ? 'running' : 'idle',
+          pendingAsk: t.run_id ? null : (t.pending_ask ?? null),
+          run: t.pending_approval
+            ? 'awaiting_approval'
+            : t.run_id
+              ? 'running'
+              : t.pending_ask
+                ? 'awaiting_approval'
+                : 'idle',
           ...(artifacts.ok
             ? {
                 sources: artifacts.data.sources,
@@ -384,6 +433,15 @@ export function createAgentStore({
         if (!sid || !get().approval) return
         set({ approval: null })
         const { path, body } = streams.decisions(sid, decisions)
+        await drive(path, body, sid)
+      },
+
+      async answer(value) {
+        const sid = get().sessionId
+        const ask = get().pendingAsk
+        if (!sid || !ask) return
+        set({ pendingAsk: null })
+        const { path, body } = streams.answer(sid, ask.interrupt_id, value)
         await drive(path, body, sid)
       },
 

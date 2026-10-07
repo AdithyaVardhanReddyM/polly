@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import type { AgentSummary } from '../../../shared/contracts'
 import { outputUrl, serverUrl } from '../api'
+import { AskCard } from '../coder/AskCard'
 import { OutputContext } from '../coder/Markdown'
 import { TranscriptView } from '../coder/Transcript'
 import { AgentAvatar } from '../components/AgentAvatar'
@@ -112,7 +113,7 @@ export function Group({ agents, onEdit, onCreate }: Props): React.JSX.Element {
             </span>
           </div>
           <span className={`run-state is-${run}`}>
-            {run === 'running' ? 'Working' : run === 'awaiting_approval' ? 'Needs approval' : ''}
+            {run === 'running' ? 'Working' : run === 'awaiting_approval' ? 'Waiting for you' : ''}
           </span>
           <button className="icon-btn" title={`Edit ${group.name}`} onClick={() => onEdit(group.id)}>
             <Settings2 />
@@ -167,6 +168,7 @@ export function Group({ agents, onEdit, onCreate }: Props): React.JSX.Element {
               sources={sources}
               agent={lead}
               speakers
+              footer={<AskCard store={useGroupChat} />}
             />
           </OutputContext.Provider>
         )}

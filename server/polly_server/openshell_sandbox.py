@@ -36,8 +36,9 @@ from typing import Any
 from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse
 from deepagents.backends.sandbox import BaseSandbox
 
+from polly_server import variables
 from polly_server.config import settings
-from polly_server.sandbox import MAX_OUTPUT_BYTES, PACKAGES
+from polly_server.sandbox import MAX_OUTPUT_BYTES, PACKAGES, session_variables
 from polly_server.sessions import session_dir
 
 log = logging.getLogger(__name__)
@@ -320,16 +321,21 @@ class OpenShellSandbox(BaseSandbox):
         )
 
     def _run(self, command: str, timeout: int | None) -> ExecuteResponse:
+        found = session_variables(self._session_id)
         try:
             client = self._ready()
-            done = self._exec(client, ["bash", "-c", command], timeout=timeout or COMMAND_TIMEOUT)
+            done = self._exec(
+                client,
+                ["bash", "-c", variables.env_exports(found) + command],
+                timeout=timeout or COMMAND_TIMEOUT,
+            )
         except Exception as exc:  # noqa: BLE001 - the agent should read why, not crash
             log.exception("sandbox %s could not run a command", self.id)
             return ExecuteResponse(output=f"The sandbox is unavailable: {exc}", exit_code=1)
         output = done.stdout
         if done.stderr:
             output = f"{output}\n{done.stderr}" if output else done.stderr
-        return _response(output, done.exit_code)
+        return _response(variables.redact(output, found), done.exit_code)
 
     # ---------- what the network policy blocked ----------
 

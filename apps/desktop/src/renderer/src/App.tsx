@@ -15,9 +15,16 @@ import { Integrations } from './pages/Integrations'
 import { Knowledge } from './pages/Knowledge'
 import { Research } from './pages/Research'
 import { PR_URL, Review } from './pages/Review'
+import { Routines } from './pages/Routines'
 import { Settings } from './pages/Settings'
 import { useDesign } from './design/session'
-import { useChat, useGroupChat, useResearch, useReview } from './store/agentSession'
+import {
+  AGENTS_CHANGED,
+  useChat,
+  useGroupChat,
+  useResearch,
+  useReview
+} from './store/agentSession'
 import { useCoder } from './store/coder'
 import { useRoster } from './store/roster'
 
@@ -70,6 +77,13 @@ export default function App(): React.JSX.Element {
     void refresh()
   }, [refresh])
 
+  // Polly made an agent in a conversation.
+  useEffect(() => {
+    const onChange = (): void => void refresh()
+    window.addEventListener(AGENTS_CHANGED, onChange)
+    return () => window.removeEventListener(AGENTS_CHANGED, onChange)
+  }, [refresh])
+
   useEffect(() => {
     const current = window.location.hash.slice(1).split('/')[0].toLowerCase()
     if (current !== section.toLowerCase()) {
@@ -84,10 +98,14 @@ export default function App(): React.JSX.Element {
     return () => window.removeEventListener('hashchange', follow)
   }, [])
 
-  // The chat workspace covers whichever agents the user has made.
+  // The chat workspace covers Polly and whichever agents the user has made.
   useEffect(() => {
     useRoster.getState().setAgents(agents)
-    useChat.getState().setAgentIds(agents.filter((a) => a.custom).map((a) => a.id))
+    useChat
+      .getState()
+      .setAgentIds(
+        [...agents.filter((a) => a.orchestrator), ...agents.filter((a) => a.custom)].map((a) => a.id)
+      )
   }, [agents])
 
   // And the group workspace, whichever groups.
@@ -163,7 +181,8 @@ export default function App(): React.JSX.Element {
       await useDesign.getState().send(text)
       return
     }
-    if (byId.get(target)?.custom) {
+    const chosen = byId.get(target)
+    if (chosen && homeOf(chosen) === 'Chat') {
       newChat(target)
       await useChat.getState().send(text)
       return
@@ -314,6 +333,28 @@ export default function App(): React.JSX.Element {
         {section === 'Computers' && <Computers agents={agents} server={server} />}
         {section === 'Knowledge' && <Knowledge />}
         {section === 'Integrations' && <Integrations agents={agents} />}
+        {section === 'Routines' && (
+          <Routines
+            agents={agents}
+            groups={groups}
+            onOpenSession={(session) => {
+              if (session.group_id) {
+                openGroup(session.group_id)
+                void useGroupChat.getState().open(session.id)
+              } else {
+                const home = byId.get(session.agent_id)
+                const where = home && homeOf(home)
+                if (where === 'Chat') {
+                  setSection('Chat')
+                  void useChat.getState().open(session.id)
+                } else if (where === 'Research') {
+                  setSection('Research')
+                  void useResearch.getState().open(session.id)
+                }
+              }
+            }}
+          />
+        )}
         {section === 'Settings' && (
           <Settings server={server} agents={agents} onRecheck={refresh} />
         )}

@@ -1,5 +1,6 @@
 import {
   Bot,
+  CalendarClock,
   House,
   Library,
   PanelLeftClose,
@@ -35,17 +36,19 @@ export const SECTIONS = [
   'Builder',
   'Computers',
   'Knowledge',
-  'Integrations'
+  'Integrations',
+  'Routines'
 ] as const
 export type Section = (typeof SECTIONS)[number] | 'Settings'
 
 /** The pages in the sidebar's nav; every agent below it opens its own workspace. */
-const NAV = ['Home', 'Agents', 'Knowledge', 'Integrations'] as const
+const NAV = ['Home', 'Agents', 'Knowledge', 'Routines', 'Integrations'] as const
 
 const ICONS: Record<(typeof NAV)[number] | 'Settings', React.JSX.Element> = {
   Home: <House />,
   Agents: <Bot />,
   Knowledge: <Library />,
+  Routines: <CalendarClock />,
   Integrations: <Plug />,
   Settings: <Cog />
 }
@@ -59,9 +62,11 @@ const HOME_OF: Record<string, Section> = {
   reviewer: 'Review'
 }
 
-/** The workspace an agent opens in; the user's own agents share Chat. */
-export function homeOf(agent: Pick<AgentSummary, 'id' | 'custom'>): Section | undefined {
-  return HOME_OF[agent.id] ?? (agent.custom ? 'Chat' : undefined)
+/** The workspace an agent opens in; Polly and the user's own agents share Chat. */
+export function homeOf(
+  agent: Pick<AgentSummary, 'id' | 'custom' | 'orchestrator'>
+): Section | undefined {
+  return HOME_OF[agent.id] ?? (agent.custom || agent.orchestrator ? 'Chat' : undefined)
 }
 
 const COLLAPSED = 'polly.sidebar.collapsed'
@@ -369,8 +374,10 @@ export function Sidebar({
             )}
           </label>
           <div className="buddies-list">
+            {/* Polly, who puts teams together, comes before everyone. */}
+            {shown.filter((a) => a.orchestrator).map(chat)}
             {shownGroups.map(groupRow)}
-            {shown.map(chat)}
+            {shown.filter((a) => !a.orchestrator).map(chat)}
             {shown.length + shownGroups.length === 0 && (
               <div className="buddies-empty">Nothing matches “{query.trim()}”</div>
             )}

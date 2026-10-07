@@ -7,9 +7,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
 
 from polly_server import artifacts, model_registry, projects, sandbox, sessions
-from polly_server.agents import builders, catalog, groups, team
+from polly_server.agents import asks, builders, catalog, groups, team
 from polly_server.api.routers.design import context_note
 from polly_server.api.schemas import (
+    AnswerIn,
     Artifacts,
     ChangePaths,
     DecisionsIn,
@@ -193,6 +194,7 @@ async def transcript(session_id: str) -> Transcript:
     messages: list[dict[str, Any]] = []
     todos: list[dict[str, Any]] = []
     pending = None
+    pending_ask = None
     # The graph merges the checkpoint with its pending writes for us; raw
     # checkpoints only carry the channels the last step touched.
     try:
@@ -204,7 +206,9 @@ async def transcript(session_id: str) -> Transcript:
         messages = [w for m in state.values.get("messages", []) if (w := wire_message(m))]
         todos = list(state.values.get("todos") or [])
         if state.interrupts:
-            pending = approval_payload(state.interrupts[0])
+            pending_ask = asks.payload_of(state.interrupts[0])
+            if pending_ask is None:
+                pending = approval_payload(state.interrupts[0])
     run = manager.for_session(session.id)
     return Transcript(
         session=session,
@@ -212,6 +216,7 @@ async def transcript(session_id: str) -> Transcript:
         todos=todos,
         pending_approval=pending,
         run_id=run.id if run and not run.done else None,
+        pending_ask=pending_ask,
     )
 
 
@@ -260,6 +265,22 @@ async def decide(session_id: str, body: DecisionsIn) -> StreamingResponse:
     decisions = [d.model_dump(exclude_none=True) for d in body.decisions]
     try:
         run = await manager.resume(project, session, decisions)
+    except SessionBusy:
+        raise HTTPException(409, "this session is already running") from None
+    return _stream(run)
+
+
+@router.post("/sessions/{session_id}/answer")
+async def answer(session_id: str, body: AnswerIn) -> StreamingResponse:
+    """Answer the card a run is waiting on (`agents/asks.py`)."""
+    _require_model()
+    session = _session(session_id)
+    project = _project_for_run(session)
+    if session.status != "awaiting_approval":
+        raise HTTPException(409, "this session is not waiting for an answer")
+    value = body.model_dump(exclude_none=True, exclude={"interrupt_id"})
+    try:
+        run = await manager.answer(project, session, body.interrupt_id, value)
     except SessionBusy:
         raise HTTPException(409, "this session is already running") from None
     return _stream(run)

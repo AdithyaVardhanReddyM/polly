@@ -33,6 +33,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     # Vector search in SQLite, next to FTS5 keyword search (`retrieval.py`).
     "sqlite-vec>=0.1.9",
+    "croniter>=6.2.4",
 ]
 
 [project.scripts]

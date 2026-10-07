@@ -83,6 +83,11 @@ def _write(saved: dict[str, Any]) -> None:
 # ---------- who can be on a team ----------
 
 
+def is_orchestrator(spec: AgentSpec | None) -> bool:
+    """Polly: it puts teams together and leads them, it is not on one."""
+    return spec is not None and spec.metadata.get("orchestrator") == "true"
+
+
 def can_join(spec: AgentSpec | None) -> bool:
     """Whether other agents can hand work to this one."""
     return (
@@ -90,6 +95,7 @@ def can_join(spec: AgentSpec | None) -> bool:
         and spec.status == "ready"
         and spec.metadata.get("internal") != "true"
         and spec.id not in OWN_WORKSPACE
+        and not is_orchestrator(spec)
     )
 
 
@@ -117,6 +123,8 @@ def check(ids: list[str], agent_id: str | None = None) -> list[str]:
         if i == agent_id:
             raise ValueError(f"{spec.name} cannot be its own teammate")
         if not can_join(spec):
+            if is_orchestrator(spec):
+                raise ValueError(f"{spec.name} leads teams and cannot be on one")
             why = "works in its own workspace" if i in OWN_WORKSPACE else "is not available yet"
             raise ValueError(f"{spec.name} {why} and cannot be called on by other agents")
     return ids

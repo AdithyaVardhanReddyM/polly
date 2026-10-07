@@ -68,6 +68,10 @@ export interface AgentSummary {
   memory: boolean
   /** The model a new conversation starts on. */
   model: string
+  /** Made by Polly for one of its teams (and approved by the user). */
+  hired?: boolean
+  /** Polly: puts a team together for each task. */
+  orchestrator?: boolean
 }
 
 /** What the builder edits. */
@@ -295,6 +299,118 @@ export interface Transcript {
   todos: Todo[]
   pending_approval: ApprovalRequired | null
   run_id: string | null
+  /** A card the run is waiting on. */
+  pending_ask?: AskRequired | null
+}
+
+// ---------- cards: what an agent asks the user ----------
+
+export interface AskApp {
+  slug: string
+  name: string
+  connected?: boolean
+  description?: string
+}
+
+/** One card a run stops on until the user answers (`agents/asks.py`). */
+export type AskRequired = { interrupt_id: string | null } & (
+  | {
+      kind: 'hire'
+      agent: {
+        name: string
+        tagline: string
+        description: string
+        avatar: Record<string, string>
+        sandbox: boolean
+        apps: AskApp[]
+        variables: { name: string; is_set: boolean }[]
+      }
+      reason: string
+    }
+  | { kind: 'question'; question: string; options: string[] }
+  | { kind: 'connect'; app: AskApp; agent: { id: string; name: string } }
+  | {
+      kind: 'variables'
+      why: string
+      agent: string
+      variables: { name: string; secret: boolean; description: string }[]
+    }
+  | {
+      kind: 'confirm'
+      action: 'save_team' | 'routine'
+      title: string
+      detail: string
+      task?: string
+    }
+)
+
+export interface AskAnswer {
+  approved?: boolean
+  answer?: string
+  connected?: boolean
+  done?: boolean
+}
+
+// ---------- variables and routines ----------
+
+/** A setting or secret agents can use; a secret's value never comes back. */
+export interface Variable {
+  name: string
+  description: string
+  secret: boolean
+  is_set: boolean
+  /** Only for settings that are not secret. */
+  value: string | null
+  /** The agents allowed to use it; empty means every agent. */
+  agents: string[]
+  updated_at: number
+}
+
+export interface VariableFields {
+  value?: string
+  description?: string
+  secret?: boolean
+  agents?: string[]
+}
+
+export type RoutineTrigger =
+  | { kind: 'schedule'; cron: string; timezone: string }
+  | { kind: 'github'; repo: string; event: 'pull_request.opened' | 'issues.opened' }
+
+export interface RoutineRun {
+  session_id: string | null
+  started_at: number
+  status: 'running' | 'done' | 'error' | 'skipped'
+  note: string
+}
+
+export interface Routine {
+  id: string
+  name: string
+  prompt: string
+  trigger: RoutineTrigger
+  agent_id: string
+  group_id: string | null
+  members: string[] | null
+  enabled: boolean
+  created_at: number
+  updated_at: number
+  next_run_at: number | null
+  last_run_at: number | null
+  runs: RoutineRun[]
+  /** The trigger in words. */
+  when: string
+  running: boolean
+}
+
+export interface RoutineFields {
+  name: string
+  prompt: string
+  trigger: RoutineTrigger
+  agent_id?: string
+  group_id?: string | null
+  members?: string[] | null
+  enabled?: boolean
 }
 
 export type Decision =
@@ -557,6 +673,11 @@ export type CoderEvent =
     })
   | (EventBase & { type: 'subagent.completed'; task_id: string; name: string; summary: string })
   | (EventBase & { type: 'approval.required' } & ApprovalRequired)
+  | (EventBase & { type: 'ask.required' } & AskRequired)
+  | (EventBase & { type: 'agent.hired'; agent: AgentSummary; members: string[] })
+  | (EventBase & { type: 'team.updated'; members: string[] })
+  | (EventBase & { type: 'group.created'; group_id: string })
+  | (EventBase & { type: 'routine.created'; routine_id: string })
   | (EventBase & { type: 'todos.updated'; todos: Todo[] })
   | (EventBase & { type: 'file.changed' } & FileChange)
   | (EventBase &

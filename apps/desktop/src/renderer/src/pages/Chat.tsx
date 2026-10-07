@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AgentSummary } from '../../../shared/contracts'
 import type { ServerState } from '../App'
 import { outputUrl, serverUrl } from '../api'
+import { AskCard } from '../coder/AskCard'
 import { OutputContext } from '../coder/Markdown'
 import { TranscriptView } from '../coder/Transcript'
 import { AgentAvatar } from '../components/AgentAvatar'
@@ -121,12 +122,14 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
             <span>{agent.name}</span>
           </div>
           <span className={`run-state is-${run}`}>
-            {run === 'running' ? 'Working' : run === 'awaiting_approval' ? 'Needs approval' : ''}
+            {run === 'running' ? 'Working' : run === 'awaiting_approval' ? 'Waiting for you' : ''}
           </span>
           <TeamButton store={useChat} lead={agent} />
-          <button className="icon-btn" title={`Edit ${agent.name}`} onClick={() => onEdit(agent.id)}>
-            <Pencil />
-          </button>
+          {agent.custom && (
+            <button className="icon-btn" title={`Edit ${agent.name}`} onClick={() => onEdit(agent.id)}>
+              <Pencil />
+            </button>
+          )}
           {searches && (
             <button
               className="icon-btn"
@@ -211,6 +214,7 @@ export function Chat({ agents, server, onEdit, onCreate }: Props): React.JSX.Ele
               onDecide={decide}
               sources={sources}
               agent={agent}
+              footer={<AskCard store={useChat} />}
             />
           </OutputContext.Provider>
         )}
